@@ -4,3 +4,8 @@ context/
 node_modules/
 build/
 sdkconfig.old
+firmware/main/secrets.h
+firmware/build/
+firmware/managed_components/
+firmware/sdkconfig
+firmware/dependencies.lock
