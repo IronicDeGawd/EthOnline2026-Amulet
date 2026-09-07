@@ -9,3 +9,4 @@ firmware/build/
 firmware/managed_components/
 firmware/sdkconfig
 firmware/dependencies.lock
+tools/fake-ledger/.venv/
