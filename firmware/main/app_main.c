@@ -77,7 +77,13 @@ static void first_signed_tx(void)
     // bump gas price 25% so it lands quickly
     { uint64_t gp = 0; for (int i = 24; i < 32; i++) gp = (gp << 8) | gas_price[i]; gp += gp / 4; u64_to_be32(gp, gas_price); }
 
+#if AMULET_TEST_WITH_CALLDATA
+    // Contract-call shape: selector repay(uint256) + amount 120e6. Requires Blind signing enabled on the device.
+    static const uint8_t calldata[36] = { 0x37,0x1f,0xd8,0xea,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0x07,0x27,0x0e,0x00 };
+    legacy_tx_t tx = { .chain_id = AMULET_CHAIN_ID, .nonce = nonce, .gas_limit = 60000, .data = calldata, .data_len = sizeof calldata };
+#else
     legacy_tx_t tx = { .chain_id = AMULET_CHAIN_ID, .nonce = nonce, .gas_limit = 21000, .data = NULL, .data_len = 0 };
+#endif
     memcpy(tx.gas_price, gas_price, 32);
     hex_to_bytes(addr, tx.to, 20);                    // to self
     u64_to_be32(AMULET_TEST_VALUE_WEI, tx.value);

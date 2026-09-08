@@ -24,6 +24,7 @@ Running log of friction and findings while porting the Ledger BLE transport and 
 ## 3. Ethereum app APDUs
 - `GET PUBLIC KEY` worked first try from C with the layout in `hw-app-eth`.
 - `SIGN TX` for a legacy EIP-155 transfer worked first try; the 1-byte `v` needs the chainId-modulo recovery that only exists in `hw-app-eth` source, not in the app's APDU doc. One sentence in the doc ("for chainId > 109 the returned v is truncated; recover as …") would spare every non-JS integrator a puzzle.
+- Contract-call transactions (calldata present, no ERC-7730 descriptor) sign fine with **Blind signing enabled**; the device shows a clear warning screen first. Good UX. A pointer from the APDU doc to "how to ship an ERC-7730 descriptor so this call is clear-signed" would turn the warning into a feature for hackathon teams.
 - Auto-lock returns **0x5515** on every APDU. It is in the doc, but a note that hosts should poll-and-wait rather than fail would help agent-style integrations where nobody is watching a terminal.
 - `SIGN TX` with an invalid leading byte returns **0x6501**; a continuation chunk with no transaction in progress returns **0x6980**. Neither code is in the app's `apdu.md` status-word table as far as we could find. A complete table would have saved a lookup.
 
