@@ -12,3 +12,6 @@ firmware/dependencies.lock
 tools/fake-ledger/.venv/
 tools/fake-ledger/fake.log
 .secrets/
+.playwright-mcp/
+*.png
+web/assembly.svg.part
