@@ -42,6 +42,62 @@ size_t tx_legacy_encode_signed(const legacy_tx_t *tx, uint64_t v, const uint8_t 
     return h + p;
 }
 
+// ---- EIP-1559 (type 2) ----
+
+static size_t body_1559_common(const tx1559_t *tx, uint8_t *b, size_t cap)
+{
+    size_t p = 0;
+    PUT(rlp_uint(b + p, cap - p, tx->chain_id));
+    PUT(rlp_uint(b + p, cap - p, tx->nonce));
+    PUT(rlp_uint256(b + p, cap - p, tx->max_priority_fee));
+    PUT(rlp_uint256(b + p, cap - p, tx->max_fee));
+    PUT(rlp_uint(b + p, cap - p, tx->gas_limit));
+    PUT(rlp_bytes(b + p, cap - p, tx->to, 20));
+    PUT(rlp_uint256(b + p, cap - p, tx->value));
+    PUT(rlp_bytes(b + p, cap - p, tx->data, tx->data_len));
+    PUT(rlp_list_header(b + p, cap - p, 0));   // empty access list
+    return p;
+}
+
+// Wraps the assembled body in a list header and prefixes the 0x02 type byte.
+static size_t seal_1559(const uint8_t *body, size_t p, uint8_t *out, size_t cap)
+{
+    if (cap < 1) return 0;
+    out[0] = 0x02;
+    size_t h = rlp_list_header(out + 1, cap - 1, p);
+    if (!h || cap < 1 + h + p) return 0;
+    memcpy(out + 1 + h, body, p);
+    return 1 + h + p;
+}
+
+size_t tx_1559_encode_unsigned(const tx1559_t *tx, uint8_t *out, size_t cap)
+{
+    uint8_t body[1024]; size_t p = body_1559_common(tx, body, sizeof body);
+    if (!p) return 0;
+    return seal_1559(body, p, out, cap);
+}
+
+size_t tx_1559_encode_signed(const tx1559_t *tx, uint8_t y_parity, const uint8_t r[32], const uint8_t s[32], uint8_t *out, size_t cap)
+{
+    uint8_t body[1024]; size_t p = body_1559_common(tx, body, sizeof body);
+    if (!p) return 0;
+    PUT(rlp_uint(body + p, sizeof body - p, y_parity));
+    PUT(rlp_uint256(body + p, sizeof body - p, r));
+    PUT(rlp_uint256(body + p, sizeof body - p, s));
+    return seal_1559(body, p, out, cap);
+}
+
+uint8_t tx_1559_parity_from_ledger(uint8_t ledger_v, uint64_t chain_id)
+{
+    // Measured on a real Nano X (Ethereum app, Sepolia, tx 0xb7cb3e4a…c074): for a type-2
+    // transaction the device returns the bare yParity, NOT the EIP-155 form. Deriving it the
+    // way hw-app-eth does (subtract chainId*2+35 truncated to one byte) gives the wrong answer
+    // here — it would have returned 1 where the chain accepted 0. Callers should still keep the
+    // flipped-parity retry: this is one device on one app version, not a spec guarantee.
+    (void)chain_id;
+    return ledger_v & 1;
+}
+
 uint64_t tx_legacy_v_from_ledger(uint8_t ledger_v, uint64_t chain_id)
 {
     // hw-app-eth: parity = (v - (chainId*2+35)) mod 256 truncated to 0/1

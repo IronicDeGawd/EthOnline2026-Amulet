@@ -13,8 +13,8 @@ static int s_id = 1;
 
 void rpc_init(const char *url) { s_url = url; }
 
-// Returns malloc'd "result" as string (hex) or NULL; err_out gets error.message if any.
-static char *call(const char *method, const char *params_json, char *err_out, size_t err_cap)
+// Returns the detached "result" node (caller cJSON_Delete's it) or NULL; err_out gets error.message if any.
+static cJSON *call_json(const char *method, const char *params_json, char *err_out, size_t err_cap)
 {
     size_t bcap = strlen(params_json) + 128;
     char *body = malloc(bcap); if (!body) return NULL;
@@ -39,17 +39,26 @@ out:
     if (!resp) return NULL;
     cJSON *j = cJSON_Parse(resp); free(resp);
     if (!j) return NULL;
-    char *ret = NULL;
+    cJSON *ret = NULL;
     cJSON *e = cJSON_GetObjectItem(j, "error");
     if (e) {
         cJSON *m = cJSON_GetObjectItem(e, "message");
         if (err_out) snprintf(err_out, err_cap, "%s", m && cJSON_IsString(m) ? m->valuestring : "rpc error");
         ESP_LOGE(TAG, "%s error: %s", method, err_out ? err_out : "?");
     } else {
-        cJSON *res = cJSON_GetObjectItem(j, "result");
-        if (res && cJSON_IsString(res)) ret = strdup(res->valuestring);
+        ret = cJSON_DetachItemFromObject(j, "result");
     }
     cJSON_Delete(j);
+    return ret;
+}
+
+// Convenience wrapper for the many methods whose result is a plain hex string.
+static char *call(const char *method, const char *params_json, char *err_out, size_t err_cap)
+{
+    cJSON *r = call_json(method, params_json, err_out, err_cap);
+    if (!r) return NULL;
+    char *ret = cJSON_IsString(r) ? strdup(r->valuestring) : NULL;
+    cJSON_Delete(r);
     return ret;
 }
 
@@ -66,6 +75,44 @@ bool rpc_gas_price(uint8_t out[32])
 {
     char *r = call("eth_gasPrice", "[]", NULL, 0); if (!r) return false;
     bool ok = hex_to_bytes(r, out, 32); free(r); return ok;
+}
+
+// 32-byte big-endian add, saturating. Fees never come near overflowing, but be explicit.
+static void be32_add(uint8_t a[32], const uint8_t b[32])
+{
+    unsigned carry = 0;
+    for (int i = 31; i >= 0; i--) { unsigned t = a[i] + b[i] + carry; a[i] = t & 0xff; carry = t >> 8; }
+    if (carry) memset(a, 0xff, 32);
+}
+
+static void be32_double(uint8_t a[32])
+{
+    unsigned carry = 0;
+    for (int i = 31; i >= 0; i--) { unsigned t = (a[i] << 1) | carry; a[i] = t & 0xff; carry = t >> 8; }
+    if (carry) memset(a, 0xff, 32);
+}
+
+bool rpc_fee_data(uint8_t max_fee[32], uint8_t max_prio[32])
+{
+    // Base fee is only on the block header, so this needs the object-shaped result.
+    uint8_t base[32];
+    cJSON *blk = call_json("eth_getBlockByNumber", "[\"latest\",false]", NULL, 0);
+    if (!blk) return false;
+    cJSON *bf = cJSON_GetObjectItem(blk, "baseFeePerGas");
+    bool ok = bf && cJSON_IsString(bf) && hex_to_bytes(bf->valuestring, base, 32);
+    cJSON_Delete(blk);
+    if (!ok) { ESP_LOGE(TAG, "no baseFeePerGas — chain is pre-1559?"); return false; }
+
+    // Tip: ask the node, fall back to 1.5 gwei when the method is unsupported.
+    char *t = call("eth_maxPriorityFeePerGas", "[]", NULL, 0);
+    if (!t || !hex_to_bytes(t, max_prio, 32)) { u64_to_be32(1500000000ULL, max_prio); ESP_LOGW(TAG, "using fallback tip 1.5 gwei"); }
+    free(t);
+
+    // Ceiling = 2*baseFee + tip, so the tx survives a couple of blocks of base-fee growth.
+    memcpy(max_fee, base, 32);
+    be32_double(max_fee);
+    be32_add(max_fee, max_prio);
+    return true;
 }
 
 bool rpc_balance(const char *addr_hex, uint8_t out[32])

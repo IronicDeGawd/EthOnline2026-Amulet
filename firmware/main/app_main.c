@@ -1,5 +1,5 @@
 // Amulet pendant — Day 2 build: first Ledger-signed transaction from the pendant.
-// WiFi → RPC → BLE Ledger → GET PUBLIC KEY → nonce/gas → legacy tx to self → SIGN TX → broadcast.
+// WiFi → RPC → BLE Ledger → GET PUBLIC KEY → nonce/fees → tx to self → SIGN TX → broadcast.
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
@@ -68,43 +68,83 @@ static void first_signed_tx(void)
     if (rc || sw != 0x9000 || apdu_eth_parse_address(out, n, pk, addr)) { ESP_LOGE(TAG, "get-address failed rc=%d sw=%04x", rc, sw); goto done; }
     ESP_LOGI(TAG, "LEDGER ADDRESS %s", addr);
 
-    uint8_t bal[32], gas_price[32]; uint64_t nonce;
-    if (!rpc_balance(addr, bal) || !rpc_get_nonce(addr, &nonce) || !rpc_gas_price(gas_price)) { ESP_LOGE(TAG, "rpc failed"); goto done; }
-    hexlog("balance wei", bal + 24, 8); ESP_LOGI(TAG, "nonce %llu", (unsigned long long)nonce); hexlog("gasPrice", gas_price + 24, 8);
+    uint8_t bal[32]; uint64_t nonce;
+    if (!rpc_balance(addr, bal) || !rpc_get_nonce(addr, &nonce)) { ESP_LOGE(TAG, "rpc failed"); goto done; }
+    hexlog("balance wei", bal + 24, 8); ESP_LOGI(TAG, "nonce %llu", (unsigned long long)nonce);
     bool zero = true; for (int i = 0; i < 32; i++) if (bal[i]) zero = false;
     if (zero) { ESP_LOGW(TAG, "balance is zero — fund %s with Sepolia ETH and reset", addr); goto done; }
-
-    // bump gas price 25% so it lands quickly
-    { uint64_t gp = 0; for (int i = 24; i < 32; i++) gp = (gp << 8) | gas_price[i]; gp += gp / 4; u64_to_be32(gp, gas_price); }
 
 #if AMULET_TEST_WITH_CALLDATA
     // Contract-call shape: selector repay(uint256) + amount 120e6. Requires Blind signing enabled on the device.
     static const uint8_t calldata[36] = { 0x37,0x1f,0xd8,0xea,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 0x07,0x27,0x0e,0x00 };
-    legacy_tx_t tx = { .chain_id = AMULET_CHAIN_ID, .nonce = nonce, .gas_limit = 60000, .data = calldata, .data_len = sizeof calldata };
+    const uint8_t *cd = calldata; size_t cdl = sizeof calldata; uint64_t gas_limit = 60000;
 #else
-    legacy_tx_t tx = { .chain_id = AMULET_CHAIN_ID, .nonce = nonce, .gas_limit = 21000, .data = NULL, .data_len = 0 };
+    const uint8_t *cd = NULL; size_t cdl = 0; uint64_t gas_limit = 21000;
 #endif
+
+#if AMULET_TX_TYPE == 2
+    uint8_t max_fee[32], max_prio[32];
+    if (!rpc_fee_data(max_fee, max_prio)) { ESP_LOGE(TAG, "fee data failed"); goto done; }
+    hexlog("maxFeePerGas", max_fee + 24, 8); hexlog("maxPriorityFeePerGas", max_prio + 24, 8);
+
+    tx1559_t tx = { .chain_id = AMULET_CHAIN_ID, .nonce = nonce, .gas_limit = gas_limit, .data = cd, .data_len = cdl };
+    memcpy(tx.max_fee, max_fee, 32);
+    memcpy(tx.max_priority_fee, max_prio, 32);
+    hex_to_bytes(addr, tx.to, 20);                    // to self
+    u64_to_be32(AMULET_TEST_VALUE_WEI, tx.value);
+
+    uint8_t rlp[256]; size_t rl = tx_1559_encode_unsigned(&tx, rlp, sizeof rlp);
+#else
+    uint8_t gas_price[32];
+    if (!rpc_gas_price(gas_price)) { ESP_LOGE(TAG, "gas price failed"); goto done; }
+    hexlog("gasPrice", gas_price + 24, 8);
+    // bump gas price 25% so it lands quickly
+    { uint64_t gp = 0; for (int i = 24; i < 32; i++) gp = (gp << 8) | gas_price[i]; gp += gp / 4; u64_to_be32(gp, gas_price); }
+
+    legacy_tx_t tx = { .chain_id = AMULET_CHAIN_ID, .nonce = nonce, .gas_limit = gas_limit, .data = cd, .data_len = cdl };
     memcpy(tx.gas_price, gas_price, 32);
     hex_to_bytes(addr, tx.to, 20);                    // to self
     u64_to_be32(AMULET_TEST_VALUE_WEI, tx.value);
 
     uint8_t rlp[256]; size_t rl = tx_legacy_encode_unsigned(&tx, rlp, sizeof rlp);
-    hexlog("unsigned rlp", rlp, rl);
+#endif
+    if (!rl) { ESP_LOGE(TAG, "encode failed"); goto done; }
+    hexlog("unsigned payload", rlp, rl);
     ESP_LOGW(TAG, ">>> CONFIRM THE TRANSACTION ON THE NANO X <<<");
 
     uint8_t v8, r[32], s[32];
     rc = sign_with_ledger(rlp, rl, &v8, r, s);
     if (rc) { ESP_LOGE(TAG, "sign failed rc=%d", rc); goto done; }
-    uint64_t v = tx_legacy_v_from_ledger(v8, AMULET_CHAIN_ID);
-    ESP_LOGI(TAG, "ledger v=%u → v=%llu", v8, (unsigned long long)v); hexlog("r", r, 32); hexlog("s", s, 32);
+    hexlog("r", r, 32); hexlog("s", s, 32);
 
-    uint8_t raw[320]; size_t rawl = tx_legacy_encode_signed(&tx, v, r, s, raw, sizeof raw);
+    uint8_t raw[320]; char txh[67], err[128];
+#if AMULET_TX_TYPE == 2
+    // The Ledger's v byte for typed transactions is inconsistent across app versions, and we have no
+    // secp256k1 recovery on the device to settle it locally. Try the computed parity, then the other one.
+    uint8_t parity = tx_1559_parity_from_ledger(v8, AMULET_CHAIN_ID);
+    ESP_LOGI(TAG, "ledger v=%u → yParity guess %u", v8, parity);
+    for (int pass = 0; pass < 2; pass++, parity ^= 1) {
+        size_t rawl = tx_1559_encode_signed(&tx, parity, r, s, raw, sizeof raw);
+        if (!rawl) { ESP_LOGE(TAG, "encode failed"); goto done; }
+        hexlog("SIGNED RAW TX", raw, rawl);
+        uint8_t h[32]; keccak256(raw, rawl, h); hexlog("expected tx hash", h, 32);
+        if (rpc_send_raw(raw, rawl, txh, err)) {
+            ESP_LOGI(TAG, "BROADCAST OK (yParity=%u) %s  https://sepolia.etherscan.io/tx/%s", parity, txh, txh);
+            goto done;
+        }
+        ESP_LOGW(TAG, "broadcast with yParity=%u failed: %s", parity, err);
+    }
+    ESP_LOGE(TAG, "both parities rejected — signature or encoding is wrong, not the v byte");
+#else
+    uint64_t v = tx_legacy_v_from_ledger(v8, AMULET_CHAIN_ID);
+    ESP_LOGI(TAG, "ledger v=%u → v=%llu", v8, (unsigned long long)v);
+    size_t rawl = tx_legacy_encode_signed(&tx, v, r, s, raw, sizeof raw);
+    if (!rawl) { ESP_LOGE(TAG, "encode failed"); goto done; }
     hexlog("SIGNED RAW TX", raw, rawl);
     uint8_t h[32]; keccak256(raw, rawl, h); hexlog("expected tx hash", h, 32);
-
-    char txh[67], err[128];
     if (rpc_send_raw(raw, rawl, txh, err)) ESP_LOGI(TAG, "BROADCAST OK %s  https://sepolia.etherscan.io/tx/%s", txh, txh);
     else ESP_LOGE(TAG, "broadcast failed: %s", err);
+#endif
 done:
     ledger_ble_disconnect();
 }
