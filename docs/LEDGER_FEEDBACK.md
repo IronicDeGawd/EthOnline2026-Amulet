@@ -14,8 +14,16 @@ Running log of friction and findings while porting the Ledger BLE transport and 
 - NimBLE (ESP-IDF) routes incoming notifications through the ATT *server* dispatch table. A central-only build with `CONFIG_BT_NIMBLE_GATT_SERVER=n` silently drops every notification from the Ledger. Cost us an hour of HCI-trace reading. A porting guide could carry a "stack gotchas" list.
 - With no device on hand we validated framing against a fake peripheral on macOS (`tools/fake-ledger/`) built from the gist. It cannot rehearse pairing, which is the part most likely to differ. An official BLE simulator mode in Speculos would close this gap.
 
+## 2b. First contact with a real Nano X (BLE)
+- **The device advertises under a random-looking 4-hex name (`F69C`), not "Nano X".** Nothing in the docs says so; developers filtering by name will never find it. Document that the service UUID is the only reliable discriminator.
+- **Subscribing before pairing fails with ATT error 0x05 (insufficient authentication).** The gist says LE Secure Connections are "preferred"; on the device they are *required* for the notify characteristic. Say "required" and state the order: connect → pair → subscribe.
+- **The pairing window is 30 s and a missed confirmation stops advertising** until the error screen is dismissed on the device. First-time developers will read this as "my scan is broken". Worth one line.
+- There is a **third characteristic** (`…0003`, write-without-response) not in the gist. Is it usable for APDU frames? Unknown; document either way.
+- `GET MTU (0x08)` did not answer within 3 s and `GET VERSION (0x00)` returned an empty payload, while `ECHO (0x02)` and APDUs worked. Either these tags are deprecated or need a specific state; the doc should say which tags current firmware supports.
+
 ## 3. Ethereum app APDUs
-_(to be filled on first contact with the real device)_
+- `GET PUBLIC KEY` worked first try from C with the layout in `hw-app-eth`.
+- `SIGN TX` with an invalid leading byte returns **0x6501**; a continuation chunk with no transaction in progress returns **0x6980**. Neither code is in the app's `apdu.md` status-word table as far as we could find. A complete table would have saved a lookup.
 
 ## 4. wallet-cli / Key Ring
 _(to be filled when the brain's secrets move to the Key Ring)_

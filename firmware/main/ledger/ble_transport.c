@@ -10,6 +10,8 @@
 #include "host/ble_gatt.h"
 #include "host/ble_sm.h"
 #include "host/util/util.h"
+#include "store/config/ble_store_config.h"
+void ble_store_config_init(void);
 
 static const char *TAG = "ledger-ble";
 
@@ -32,7 +34,7 @@ static struct {
     uint16_t att_mtu;            // negotiated ATT MTU
     uint16_t payload_mtu;        // from Ledger GET MTU (bytes per frame incl. header)
     uint8_t  own_addr_type;
-    volatile bool synced, ready, connected;
+    volatile bool synced, ready, connected, secured;
     // rx reassembly
     uint8_t  rx_tag; uint16_t rx_seq, rx_expected, rx_len; uint8_t rx_buf[RX_MAX]; volatile bool rx_done; int rx_err;
     SemaphoreHandle_t ev;        // generic "something happened" for connect flow
@@ -130,7 +132,10 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
     switch (ev->type) {
     case BLE_GAP_EVENT_DISC: {
         char name[32];
-        if (!is_ledger(&ev->disc, name, sizeof name)) return 0;
+        if (!is_ledger(&ev->disc, name, sizeof name)) {
+            if (name[0]) ESP_LOGI(TAG, "adv \"%s\" rssi=%d", name, ev->disc.rssi);
+            return 0;
+        }
         ESP_LOGI(TAG, "found \"%s\" rssi=%d, connecting", name, ev->disc.rssi);
         ble_gap_disc_cancel();
         int rc = ble_gap_connect(s.own_addr_type, &ev->disc.addr, 10000, NULL, gap_cb, NULL);
@@ -142,9 +147,12 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
         return 0;
     case BLE_GAP_EVENT_CONNECT:
         if (ev->connect.status != 0) { ESP_LOGE(TAG, "connect failed %d", ev->connect.status); xSemaphoreGive(s.ev); return 0; }
-        s.conn = ev->connect.conn_handle; s.connected = true;
-        ESP_LOGI(TAG, "connected handle=%u", s.conn);
-        ble_gattc_exchange_mtu(s.conn, on_mtu, NULL);
+        s.conn = ev->connect.conn_handle; s.connected = true; s.secured = false;
+        ESP_LOGI(TAG, "connected handle=%u, initiating pairing", s.conn);
+        {
+            int rc = ble_gap_security_initiate(s.conn);
+            if (rc != 0) { ESP_LOGW(TAG, "security_initiate rc=%d, continuing unencrypted", rc); ble_gattc_exchange_mtu(s.conn, on_mtu, NULL); }
+        }
         return 0;
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGW(TAG, "disconnected reason=%d", ev->disconnect.reason);
@@ -154,9 +162,22 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
     case BLE_GAP_EVENT_MTU:
         s.att_mtu = ev->mtu.value;
         return 0;
-    case BLE_GAP_EVENT_ENC_CHANGE:
-        ESP_LOGI(TAG, "encryption change status=%d", ev->enc_change.status);
+    case BLE_GAP_EVENT_ENC_CHANGE: {
+        struct ble_gap_conn_desc d;
+        ble_gap_conn_find(ev->enc_change.conn_handle, &d);
+        ESP_LOGI(TAG, "encryption change status=%d encrypted=%d authenticated=%d bonded=%d",
+                 ev->enc_change.status, d.sec_state.encrypted, d.sec_state.authenticated, d.sec_state.bonded);
+        if (ev->enc_change.status != 0) { xSemaphoreGive(s.ev); return 0; }
+        if (!s.secured) { s.secured = true; ble_gattc_exchange_mtu(s.conn, on_mtu, NULL); }
         return 0;
+    }
+    case BLE_GAP_EVENT_REPEAT_PAIRING: {
+        // Peer lost our bond (or we lost theirs): drop the stale bond and let it pair again.
+        struct ble_gap_conn_desc d;
+        if (ble_gap_conn_find(ev->repeat_pairing.conn_handle, &d) == 0) ble_store_util_delete_peer(&d.peer_id_addr);
+        ESP_LOGW(TAG, "repeat pairing: deleted stale bond, retrying");
+        return BLE_GAP_REPEAT_PAIRING_RETRY;
+    }
     case BLE_GAP_EVENT_PASSKEY_ACTION: {
         struct ble_sm_io io = {0};
         io.action = ev->passkey.params.action;
@@ -218,6 +239,7 @@ void ledger_ble_init(void)
     ble_hs_cfg.sm_bonding = 1; ble_hs_cfg.sm_mitm = 1; ble_hs_cfg.sm_sc = 1;
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+    ble_store_config_init();   // persist bonds in NVS
     nimble_port_freertos_init(host_task);
 }
 

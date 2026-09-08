@@ -27,7 +27,7 @@ static void ledger_test(void)
 {
     uint8_t out[512]; size_t n; uint16_t sw; int rc;
 
-    rc = ledger_ble_connect(20000);
+    rc = ledger_ble_connect(90000);
     if (rc) { ESP_LOGE(TAG, "ledger connect rc=%d", rc); return; }
 
     rc = ledger_ble_exchange(LEDGER_TAG_VERSION, NULL, 0, out, sizeof out, &n, 3000);
