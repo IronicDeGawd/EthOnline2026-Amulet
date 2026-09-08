@@ -11,3 +11,4 @@ firmware/sdkconfig
 firmware/dependencies.lock
 tools/fake-ledger/.venv/
 tools/fake-ledger/fake.log
+.secrets/
