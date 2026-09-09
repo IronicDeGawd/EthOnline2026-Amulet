@@ -103,6 +103,14 @@ bool proposal_parse(const char *json, size_t len, amulet_proposal_t *out, char *
     uint64_t exp = 0;
     if (u64_field(root, "expiresAt", &exp)) out->expires_at = (int64_t)exp;
 
+    // A plain transfer is fully readable from the transaction itself, so the screen shows
+    // what will be signed, not what the brain claims. Contract calls keep the brain's words
+    // until the policy layer can decode them.
+    if (out->data_len == 0 && out->tier > 0) {
+        char v[24]; proposal_format_value(out->value, v, sizeof v);
+        snprintf(out->human, sizeof out->human, "Send %s", v);
+    }
+
     ok = true;
 done:
     if (root) cJSON_Delete(root);
