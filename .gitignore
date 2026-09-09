@@ -30,3 +30,4 @@ contracts/cache/
 contracts/broadcast/
 contracts/deployments/31337.json
 tools/propose/.venv/
+tools/propose/__pycache__/

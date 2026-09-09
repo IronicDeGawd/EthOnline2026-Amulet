@@ -7,7 +7,7 @@ brain exists, and as the Thursday fallback.
   propose.py --to 0xSIM --fn "borrow(uint256)" --args 60000000 --human "Borrow 60 sUSDC"
   propose.py --scenario price_drop            # setPrice(1600e8) from the deployer key, then a repay
 
-Firmware: AMULET_BRAIN_ENABLED 1, AMULET_FAKE_PROPOSAL 0, AMULET_WSS_URL "ws://<this laptop>:8787".
+Firmware: AMULET_BRAIN_ENABLED 1, AMULET_FAKE_PROPOSAL 0, AMULET_WSS_URL "ws://<this laptop>:8788".
 Nano X: Blind signing ON in the Ethereum app settings (these are contract calls).
 """
 import argparse, asyncio, json, os, socket, subprocess, sys, time, urllib.request
@@ -128,7 +128,7 @@ def main():
     ap.add_argument("--rationale", default="Manual proposal from propose.py")
     ap.add_argument("--tier", type=int, default=2)
     ap.add_argument("--gas", type=int)
-    ap.add_argument("--port", type=int, default=8787)
+    ap.add_argument("--port", type=int, default=8788)
     ap.add_argument("--scenario", choices=["price_drop"])
     ap.add_argument("--price", type=int, default=1600_00000000, help="price_drop target, 8 decimals")
     a = ap.parse_args()
