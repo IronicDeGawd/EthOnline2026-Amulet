@@ -53,7 +53,7 @@ function priceDrop(sim: string, price: bigint): void {
 }
 
 async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string }) {
-  const s = loadSecrets();
+  const s = await loadSecrets();
   const dep = loadDeployments();
   const sepolia = sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL"));
   const mainnet = mainnetClient(requireSecret(s, "MAINNET_RPC_URL"));
@@ -91,7 +91,7 @@ program.command("stale").description("pin a wrong deployment so the freshness ga
   .action((o) => boot({ llm: false, port: Number(o.port), deployment: o.deployment }));
 
 program.command("status").description("one round of reads, no pendant").action(async () => {
-  const s = loadSecrets();
+  const s = await loadSecrets();
   const dep = loadDeployments();
   const sepolia = sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL"));
   const mainnet = mainnetClient(requireSecret(s, "MAINNET_RPC_URL"));
@@ -108,9 +108,9 @@ program.command("status").description("one round of reads, no pendant").action(a
 
 const secrets = program.command("secrets").description("Ledger Key Ring wrapped secrets");
 secrets.command("seal").argument("<plain>", "KEY=VALUE file").description("encrypt into brain/secrets.enc")
-  .action((plain: string) => { sealSecrets(resolve(plain)); console.log("sealed → brain/secrets.enc (delete the plaintext)"); });
-secrets.command("check").description("decrypt and list key names only").action(() => {
-  console.log(Object.keys(loadSecrets()).join("\n"));
+  .action(async (plain: string) => { await sealSecrets(resolve(plain)); console.log("sealed → brain/secrets.enc (delete the plaintext)"); });
+secrets.command("check").description("decrypt and list key names only").action(async () => {
+  console.log(Object.keys(await loadSecrets()).join("\n"));
 });
 
 program.command("keygen").description("fresh hot key for AmuletLog.record; shown once, paste into the plaintext as BRAIN_LOG_PK")

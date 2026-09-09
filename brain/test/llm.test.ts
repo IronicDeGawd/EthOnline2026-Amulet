@@ -14,7 +14,8 @@ describe("explainer", () => {
     const { system, user } = buildPrompt(c, ev);
     expect(user).toContain("amount: 0.01 ETH");
     expect(user).toContain("hf: 1.07");
-    expect(system).toMatch(/copy them exactly/);
+    expect(system).toMatch(/Copy figures exactly/);
+    expect(system).toContain('"0.01 ETH and 1.07" must appear verbatim');
     expect(user).not.toMatch(/repay 0\.01/i);
   });
   it("accepts output that keeps the amount and HF", () => {

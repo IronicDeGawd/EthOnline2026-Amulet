@@ -26,7 +26,7 @@ export interface RawMarket {
 }
 
 export const LENDING_QUERY = `{
-  markets(first: 30, orderBy: totalValueLockedUSD, orderDirection: desc, where: { isActive: true }) {
+  markets(first: 40, orderBy: totalValueLockedUSD, orderDirection: desc) {
     id name inputToken { symbol } totalDepositBalanceUSD totalBorrowBalanceUSD liquidationThreshold
     rates { side type rate }
   }

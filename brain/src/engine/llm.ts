@@ -6,7 +6,7 @@ import { LLM_TIMEOUT_MS, NOVA_MODEL } from "../config.js";
 import type { Candidate } from "./rules.js";
 import type { Evidence } from "../data/graph/freshness.js";
 
-export interface Explanation { human: string; rationale: string; source: "nova" | "template" }
+export interface Explanation { human: string; rationale: string; source: "nova" | "template"; reason?: string }
 
 export const MAX_LINE = 96; // PROP_TEXT_LEN on the pendant, minus the NUL
 
@@ -38,12 +38,17 @@ export function templateFor(c: Candidate): Explanation {
 
 export function buildPrompt(c: Candidate, ev: Evidence): { system: string; user: string } {
   const facts = Object.entries(c.facts).map(([k, v]) => `${k}: ${v}`).join("\n");
+  const verb = c.action === "REPAY_DEBT" ? "Repay" : c.action === "ADD_COLLATERAL" ? "Add" : "Note";
+  const must = [c.facts.amount, c.facts.hf].filter(Boolean).join(" and ");
   return {
     system:
       "You write the two lines a small wearable shows before its owner approves a DeFi action. " +
-      "The action and every number are already decided; copy them exactly, never change, add or drop a figure. " +
-      "Reply with JSON only: {\"human\": string, \"rationale\": string}. human <= 60 chars, one line, imperative. " +
-      "rationale <= 90 chars, one sentence, plain words, states why now.",
+      "The action and every number are already decided. Copy figures exactly as given; never change, round, add or drop one. " +
+      `Both "${must}" must appear verbatim across the two lines. Never print internal names like REPAY_DEBT or HF_LOW. ` +
+      "Reply with JSON only, no code fences: {\"human\": string, \"rationale\": string}. " +
+      `human <= 60 chars, one line, starts with "${verb}", names the amount and the market. ` +
+      "rationale <= 90 chars, one plain sentence saying why now, quoting the health factor figure. " +
+      'Example: {"human":"Repay 0.01 ETH on Sim-A","rationale":"Health factor 1.07 is under 1.25; this brings it back toward 1.40."}',
     user:
       `action: ${c.action}\nrule: ${c.rule}\n${facts}\n` +
       `evidence: ${ev.subgraph} deployment ${ev.deploymentId.slice(0, 10)}… block ${ev.block}`,
@@ -90,9 +95,9 @@ export function makeNovaExplainer(region: string, timeoutMs = LLM_TIMEOUT_MS): E
           { abortSignal: AbortSignal.timeout(timeoutMs) },
         );
         const text = res.output?.message?.content?.map((b) => b.text ?? "").join("") ?? "";
-        return acceptOutput(text, c) ?? fallback;
-      } catch {
-        return fallback;
+        return acceptOutput(text, c) ?? { ...fallback, reason: `rejected: ${text.replace(/\s+/g, " ").slice(0, 160)}` };
+      } catch (e) {
+        return { ...fallback, reason: `${(e as Error).name}: ${(e as Error).message.split("\n")[0].slice(0, 160)}` };
       }
     },
   };

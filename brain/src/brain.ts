@@ -146,7 +146,7 @@ export class Brain {
     const p = assemble(c.action, tier, text, tx, evidence);
     this.pending = p;
     d.pendant.setState("proposing");
-    d.log(`PROPOSE ${p.id} tier ${tier} ${c.rule} → ${c.action}: "${p.human}" / "${p.rationale}" [${text.source}]`);
+    d.log(`PROPOSE ${p.id} tier ${tier} ${c.rule} → ${c.action}: "${p.human}" / "${p.rationale}" [${text.source}${text.reason ? `; ${text.reason}` : ""}]`);
     if (!d.pendant.push(p)) {
       d.log("pendant not connected; proposal dropped");
       this.pending = undefined;
