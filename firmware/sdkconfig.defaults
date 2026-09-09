@@ -1,0 +1,35 @@
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+# 8MB flash: the stock singleapp_large table is sized for a 2MB chip and its 0x177000 app
+# partition overflows once LVGL is linked. See firmware/partitions.csv — nvs keeps its stock
+# offset so the Ledger pairing bond survives the change.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+# Peripheral role + GATT server must stay on: NimBLE routes incoming notifications
+# through the ATT server dispatch table. Central-only builds silently drop them.
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_GATT_SERVER=y
+CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_SECURITY_ENABLE=y
+CONFIG_BT_NIMBLE_SM_SC=y
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=256
+CONFIG_ESP_TLS_INSECURE=n
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_WS_TRANSPORT=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=20480
+CONFIG_ESP_TIMER_TASK_STACK_SIZE=4096
+CONFIG_FREERTOS_HZ=1000
+
+# Larger fonts: the round panel's active area is only ~32.5mm, so LVGL's 14px default is
+# unreadable at arm's length. 20 for body, 28 for headings.
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
