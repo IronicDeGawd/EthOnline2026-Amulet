@@ -237,12 +237,17 @@ async function showEns(client: ReturnType<typeof sepoliaClient>): Promise<void> 
   console.log(`${POLICY_NAME} (ENSv2 Sepolia, contracts-v2 @ ${ENS.commit.slice(0, 7)})`);
   for (const k of keys) console.log(`  ${k.padEnd(28)} ${rec[k] ?? "(unset)"}`);
   let d: ReturnType<typeof loadEnsDeployment> | undefined;
-  try { d = loadEnsDeployment(); } catch { return; }
+  try {
+    d = loadEnsDeployment();
+  } catch (e) {
+    console.error(`could not load ENS deployment file: ${(e as Error).message.split("\n")[0]}`);
+    return;
+  }
   const can = async (who: `0x${string}`, key: string) => {
     try {
       await client.simulateContract({ address: d!.resolver, abi: RESOLVER_ABI, functionName: "setText", args: [d!.node, key, "probe"], account: who });
       return "yes";
-    } catch { return "no"; }
+    } catch { return "no"; } // a revert is the answer here, not an error
   };
   console.log(`  resolver ${d.resolver}${d.subregistry ? `  subregistry ${d.subregistry}` : ""}${d.expiry ? `  expires ${new Date(d.expiry * 1000).toISOString().slice(0, 10)}` : ""}`);
   for (const [label, who] of [["ledger", d.ledger], ["brain", d.brain], ["deployer", d.deployer]] as const) {

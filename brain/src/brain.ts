@@ -206,7 +206,9 @@ export class Brain {
           decision = { type: "decision", id: p.id, result: "approved" };
           d.log(`no answer from the pendant, but the Ledger nonce is ${n} > ${p.tx.nonce}: treating as approved`);
         }
-      } catch { /* keep expired */ }
+      } catch (e) {
+        d.log(`could not check Ledger nonce for expired decision: ${(e as Error).message.split("\n")[0]}`);
+      }
     }
     this.pending = undefined;
     this.setState("watching");
