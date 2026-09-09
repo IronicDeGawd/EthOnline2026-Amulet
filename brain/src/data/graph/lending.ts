@@ -1,7 +1,7 @@
 // One Messari lending-schema query, run against several deployments. Returns the market
 // conditions the rules watch (utilization, rates) as a per-protocol table.
 import type { GraphClient } from "./client.js";
-import type { SubgraphKey } from "../../config.js";
+import { SUBGRAPHS, type SubgraphKey } from "../../config.js";
 
 export interface MarketSnapshot {
   protocol: string;
@@ -52,7 +52,8 @@ export function toSnapshot(protocol: string, m: RawMarket): MarketSnapshot {
 
 export async function fetchLending(client: GraphClient, key: SubgraphKey) {
   const r = await client.query<{ markets: RawMarket[] }>(key, LENDING_QUERY);
-  return { ...r, markets: r.data.markets.map((m) => toSnapshot(key, m)) };
+  const protocol = SUBGRAPHS[key].name.split(" ")[0]; // "Aave", "Compound", "Spark"
+  return { ...r, markets: r.data.markets.map((m) => toSnapshot(protocol, m)) };
 }
 
 export function pickMarket(markets: MarketSnapshot[], symbol: string): MarketSnapshot | undefined {

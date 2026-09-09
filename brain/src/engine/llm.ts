@@ -26,8 +26,9 @@ export function templateFor(c: Candidate): Explanation {
         source: "template",
       };
     case "ADVISORY":
+      // "Word number rest": the pendant splits it into label, big figure, unit line.
       return {
-        human: `${f.market} utilization ${f.from}% to ${f.to}%`,
+        human: `Utilization ${f.to}% on ${f.market}`,
         rationale: `Borrow demand jumped ${f.delta} pts in ${f.window} blocks; rates now ${f.borrowRate}%. No action needed.`,
         source: "template",
       };
@@ -38,17 +39,18 @@ export function templateFor(c: Candidate): Explanation {
 
 export function buildPrompt(c: Candidate, ev: Evidence): { system: string; user: string } {
   const facts = Object.entries(c.facts).map(([k, v]) => `${k}: ${v}`).join("\n");
-  const verb = c.action === "REPAY_DEBT" ? "Repay" : c.action === "ADD_COLLATERAL" ? "Add" : "Note";
-  const must = [c.facts.amount, c.facts.hf].filter(Boolean).join(" and ");
+  const verb = templateFor(c).human.split(" ")[0];
+  const must = mustKeep(c).join(" and ");
+  const example = JSON.stringify({ human: templateFor(c).human, rationale: templateFor(c).rationale });
   return {
     system:
       "You write the two lines a small wearable shows before its owner approves a DeFi action. " +
       "The action and every number are already decided. Copy figures exactly as given; never change, round, add or drop one. " +
       `Both "${must}" must appear verbatim across the two lines. Never print internal names like REPAY_DEBT or HF_LOW. ` +
       "Reply with JSON only, no code fences: {\"human\": string, \"rationale\": string}. " +
-      `human <= 60 chars, one line, starts with "${verb}", names the amount and the market. ` +
-      "rationale <= 90 chars, one plain sentence saying why now, quoting the health factor figure. " +
-      'Example: {"human":"Repay 0.01 ETH on Sim-A","rationale":"Health factor 1.07 is under 1.25; this brings it back toward 1.40."}',
+      `human <= 60 chars, one line, starts with "${verb}", then the figure, then the market. ` +
+      "rationale <= 90 chars, one plain sentence saying why now, in fresher words than the example but with the same figures. " +
+      `Example for this exact case: ${example}`,
     user:
       `action: ${c.action}\nrule: ${c.rule}\n${facts}\n` +
       `evidence: ${ev.subgraph} deployment ${ev.deploymentId.slice(0, 10)}… block ${ev.block}`,
@@ -60,20 +62,33 @@ function oneLine(s: string, max: number): string {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
-// Accepts the model's text only if the fixed figures survived intact.
+// The pendant splits "Verb 0.0062 ETH on Sim-A" into a verb, a big figure and a unit line;
+// anything else lands whole on the figure line and is cut. The big figure has room for
+// six characters at 52 px.
+export const HEADLINE = /^[A-Za-z]+ \d[\d.,]{0,5}%?( \S.*)?$/;
+
+// Accepts the model's text only if the fixed figures survived intact and the headline
+// keeps the shape the pendant lays out.
 export function acceptOutput(text: string, c: Candidate): Explanation | undefined {
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) return undefined;
   let j: { human?: unknown; rationale?: unknown };
   try { j = JSON.parse(m[0]); } catch { return undefined; }
   if (typeof j.human !== "string" || typeof j.rationale !== "string") return undefined;
-  const human = oneLine(j.human, MAX_LINE);
+  // Advisories keep the template headline; the model only writes the why.
+  const human = c.action === "ADVISORY" ? templateFor(c).human : oneLine(j.human, MAX_LINE);
+  if (!HEADLINE.test(human)) return undefined;
   const rationale = oneLine(j.rationale, MAX_LINE);
-  const mustKeep = [c.facts.amount, c.facts.hf].filter((x): x is string => typeof x === "string");
-  for (const k of mustKeep) {
+  for (const k of mustKeep(c)) {
     if (!human.includes(k) && !rationale.includes(k)) return undefined;
   }
   return { human, rationale, source: "nova" };
+}
+
+// The figures that must survive the model untouched, per action.
+export function mustKeep(c: Candidate): string[] {
+  const keys = c.action === "ADVISORY" ? ["to", "delta"] : ["amount", "hf"];
+  return keys.map((k) => c.facts[k]).filter((x): x is string => typeof x === "string");
 }
 
 export interface Explainer { explain(c: Candidate, ev: Evidence): Promise<Explanation> }

@@ -68,13 +68,14 @@ describe("rules", () => {
     expect(after).toBeCloseTo(1.4, 2);
   });
   it("UTIL_SPIKE is an advisory, tier 0, needs a past sample", () => {
-    const snap = { protocol: "aaveV3", market: "Aave Ethereum WETH", symbol: "WETH", depositUSD: 1, borrowUSD: 1, utilization: 0.92, supplyRateBps: 144, borrowRateBps: 204, liquidationThreshold: 83 };
+    const snap = { protocol: "Aave", market: "Aave Ethereum WETH", symbol: "WETH", depositUSD: 1, borrowUSD: 1, utilization: 0.92, supplyRateBps: 144, borrowRateBps: 204, liquidationThreshold: 83 };
     const healthy = position(2400_00000000n);
     expect(evaluate(healthy, { current: snap }, DEFAULT_POLICY)).toEqual([]);
     const [c] = evaluate(healthy, { current: snap, past: { ...snap, utilization: 0.8 } }, DEFAULT_POLICY);
     expect(c.rule).toBe("UTIL_SPIKE");
     expect(tierOf(c, DEFAULT_POLICY)).toBe(0);
     expect(c.valueWei).toBe(0n);
+    expect(c.facts.market).toBe("Aave WETH");
   });
   it("fakeHf rescales the price so rules see the requested HF", () => {
     const p = fakeHf(position(), 1.15);

@@ -95,7 +95,9 @@ export function evaluate(p: Position, market: MarketContext, policy: Policy): Ca
       out.push({
         rule: "UTIL_SPIKE", action: "ADVISORY", sim: p.sim, simName: p.name, valueWei: 0n,
         facts: {
-          market: market.current.market, from: (market.past.utilization * 100).toFixed(1),
+          // "Aave WETH", short enough for the pendant's unit line
+          market: `${market.current.protocol} ${market.current.symbol}`,
+          from: (market.past.utilization * 100).toFixed(1),
           to: (market.current.utilization * 100).toFixed(1), delta: delta.toFixed(1),
           borrowRate: (market.current.borrowRateBps / 100).toFixed(2), window: policy.util_window_blocks,
         },

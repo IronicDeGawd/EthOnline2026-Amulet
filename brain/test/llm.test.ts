@@ -22,6 +22,21 @@ describe("explainer", () => {
     const out = acceptOutput('{"human":"Repay 0.01 ETH on Sim-A","rationale":"HF 1.07 is under 1.25."}', c);
     expect(out?.source).toBe("nova");
   });
+  it("refuses a headline the pendant cannot split (verb, figure, unit)", () => {
+    expect(acceptOutput('{"human":"Repay debt of 0.01 ETH on Sim-A","rationale":"HF 1.07 is low"}', c)).toBeUndefined();
+    expect(acceptOutput('{"human":"Repay 0.0100000 ETH on Sim-A","rationale":"HF 1.07 is low"}', c)).toBeUndefined();
+    expect(acceptOutput('{"human":"Repay 0.01 ETH on Sim-A","rationale":"HF 1.07 is low"}', c)?.source).toBe("nova");
+  });
+  it("advisory headline always comes from the template and splits", () => {
+    const adv: Candidate = { ...c, rule: "UTIL_SPIKE", action: "ADVISORY", valueWei: 0n, debtUnits: undefined,
+      facts: { market: "Aave WETH", from: "80.0", to: "92.0", delta: "12.0", borrowRate: "2.04", window: 40 } };
+    expect(templateFor(adv).human).toBe("Utilization 92.0% on Aave WETH");
+    const out = acceptOutput('{"human":"Whatever the model says","rationale":"Demand jumped 12.0 pts to 92.0%."}', adv);
+    expect(out?.human).toBe("Utilization 92.0% on Aave WETH");
+    // a rationale copied from another case (no delta, no level) is refused
+    expect(acceptOutput('{"human":"x","rationale":"Health factor 1.07 is under 1.25."}', adv)).toBeUndefined();
+    expect(buildPrompt(adv, ev).system).toContain("Utilization 92.0% on Aave WETH");
+  });
   it("refuses output that changed the amount", () => {
     expect(acceptOutput('{"human":"Repay 0.02 ETH on Sim-A","rationale":"HF 1.07 is low"}', c)).toBeUndefined();
     expect(acceptOutput("not json at all", c)).toBeUndefined();
