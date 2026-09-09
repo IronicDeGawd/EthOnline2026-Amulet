@@ -41,9 +41,29 @@ static struct {
     SemaphoreHandle_t rx_sem;    // response complete
     SemaphoreHandle_t wr_sem;    // GATT write acked
     SemaphoreHandle_t lock;      // one exchange at a time
+    // first-time pairing: numeric comparison parked until the caller answers
+    volatile bool pair_pending; uint32_t pair_code; uint16_t pair_conn;
 } s;
 
+static bool (*s_pair_prompt)(uint32_t code);
+
 static int gap_cb(struct ble_gap_event *ev, void *arg);
+
+void ledger_ble_set_pairing_prompt(bool (*prompt)(uint32_t code)) { s_pair_prompt = prompt; }
+
+bool ledger_ble_is_bonded(void)
+{
+    int n = 0;
+    return ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC, &n) == 0 && n > 0;
+}
+
+void ledger_ble_forget(void)
+{
+    ledger_ble_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(300));            // let the terminate go out before the keys vanish
+    ble_store_clear();
+    ESP_LOGW(TAG, "bond removed; next connect will pair again");
+}
 
 // ---------- discovery chain ----------
 static int on_cccd_read(uint16_t conn, const struct ble_gatt_error *err, struct ble_gatt_attr *attr, void *arg)
@@ -167,7 +187,13 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
         ble_gap_conn_find(ev->enc_change.conn_handle, &d);
         ESP_LOGI(TAG, "encryption change status=%d encrypted=%d authenticated=%d bonded=%d",
                  ev->enc_change.status, d.sec_state.encrypted, d.sec_state.authenticated, d.sec_state.bonded);
-        if (ev->enc_change.status != 0) { xSemaphoreGive(s.ev); return 0; }
+        if (ev->enc_change.status != 0) {
+            // Pairing failed or timed out: hang up, or the Nano X stays connected to us and
+            // never advertises again.
+            ble_gap_terminate(ev->enc_change.conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+            xSemaphoreGive(s.ev);
+            return 0;
+        }
         if (!s.secured) { s.secured = true; ble_gattc_exchange_mtu(s.conn, on_mtu, NULL); }
         return 0;
     }
@@ -182,8 +208,16 @@ static int gap_cb(struct ble_gap_event *ev, void *arg)
         struct ble_sm_io io = {0};
         io.action = ev->passkey.params.action;
         if (io.action == BLE_SM_IOACT_NUMCMP) {
-            // TODO(day1): show ev->passkey.params.numcmp on screen and require swipe. Auto-accept for now.
-            ESP_LOGW(TAG, "NUMERIC COMPARISON %06lu — auto-accepting", (unsigned long)ev->passkey.params.numcmp);
+            if (s_pair_prompt) {
+                // Hand the code to the caller blocked in ledger_ble_connect(); it answers from
+                // its own task once the wearer has compared it with the Nano X.
+                s.pair_code = ev->passkey.params.numcmp;
+                s.pair_conn = ev->passkey.conn_handle;
+                s.pair_pending = true;
+                xSemaphoreGive(s.ev);
+                return 0;
+            }
+            ESP_LOGW(TAG, "NUMERIC COMPARISON %06lu — no prompt registered, auto-accepting", (unsigned long)ev->passkey.params.numcmp);
             io.numcmp_accept = 1;
         }
         ble_sm_inject_io(ev->passkey.conn_handle, &io);
@@ -256,13 +290,38 @@ int ledger_ble_connect(uint32_t timeout_ms)
     TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(timeout_ms);
     while (!s.synced && xTaskGetTickCount() < deadline) vTaskDelay(pdMS_TO_TICKS(20));
     if (!s.synced) return -1;
+    if (s.connected) {
+        // A half-open link (pairing failed, discovery failed): drop it first, otherwise the
+        // Ledger is still "connected" and will not show up in the scan.
+        ESP_LOGW(TAG, "dropping a stale connection before scanning");
+        xSemaphoreTake(s.ev, 0);
+        ble_gap_terminate(s.conn, BLE_ERR_REM_USER_CONN_TERM);
+        xSemaphoreTake(s.ev, pdMS_TO_TICKS(3000));
+    }
     s.svc_start = s.svc_end = s.ntf_val = s.wr_val = s.cccd = 0; s.ready = false; s.payload_mtu = 0;
     xSemaphoreTake(s.ev, 0);
     struct ble_gap_disc_params p = { .passive = 0, .filter_duplicates = 1, .itvl = 0x30, .window = 0x30 };
     int rc = ble_gap_disc(s.own_addr_type, timeout_ms, &p, gap_cb, NULL);
     if (rc) { ESP_LOGE(TAG, "disc rc=%d", rc); return rc; }
     ESP_LOGI(TAG, "scanning for ledger");
-    if (xSemaphoreTake(s.ev, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return -2;
+    s.pair_pending = false;
+    uint32_t wait_ms = timeout_ms;
+    for (;;) {
+        if (xSemaphoreTake(s.ev, pdMS_TO_TICKS(wait_ms)) != pdTRUE) return -2;
+        if (!s.pair_pending) break;
+        // First pairing with this Nano X. The prompt runs here, on the caller's task, so it can
+        // poll the screen; the host task stays free. The Ledger gives the wearer ~30 s.
+        bool accept = s_pair_prompt(s.pair_code);
+        s.pair_pending = false;
+        struct ble_sm_io io = { .action = BLE_SM_IOACT_NUMCMP, .numcmp_accept = accept };
+        ble_sm_inject_io(s.pair_conn, &io);
+        wait_ms = 35000;                       // the wearer is now pressing on the Nano X
+        if (!accept) {
+            ESP_LOGW(TAG, "pairing refused on the pendant");
+            ble_gap_terminate(s.pair_conn, BLE_ERR_REM_USER_CONN_TERM);
+            return -4;
+        }
+    }
     if (!s.ready) return -3;
     // Ledger-level MTU probe
     uint8_t out[8]; size_t n = 0;

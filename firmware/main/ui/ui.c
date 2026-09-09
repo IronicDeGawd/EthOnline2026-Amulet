@@ -23,7 +23,7 @@ static ui_state_t s_state = UI_HOME;
 static bool s_confirm, s_reject, s_armed;
 static ui_status_t s_status;
 
-static lv_obj_t *s_scr[7];
+static lv_obj_t *s_scr[UI_LEDGER + 1];
 
 // HOME
 static lv_obj_t *s_home_line1, *s_home_line2, *s_home_date, *s_home_time;
@@ -36,6 +36,12 @@ static lv_obj_t *s_p_lock, *s_p_lock1, *s_p_lock2;              // locked row
 static lv_obj_t *s_p_arc, *s_p_signing;                         // holding
 static lv_obj_t *s_a_badge, *s_a_i, *s_a_label, *s_a_amount, *s_a_unit, *s_a_detail;  // advisory
 static lv_obj_t *s_p_touch;
+// PAIRING: the numeric-comparison code, hold to accept
+static lv_obj_t *s_pr_code, *s_pr_btn, *s_pr_arrow, *s_pr_hold, *s_pr_arc, *s_pr_pairing;
+// LEDGER: pair / paired / removed
+static lv_obj_t *s_l_bg, *s_l_title, *s_l_detail, *s_l_btn, *s_l_arrow, *s_l_hold, *s_l_arc, *s_l_doing;
+static ui_pair_t s_l_state;
+static uint8_t s_p_tier;                  // of the proposal on screen, to re-arm when the Ledger wakes
 // LEDGER WAIT / RESULT / BLOCKED
 static lv_obj_t *s_w_line2;
 static lv_obj_t *s_r_bg, *s_r_title, *s_r_detail;
@@ -103,42 +109,134 @@ static lv_obj_t *disc(lv_obj_t *parent, int x, int y, int d, uint32_t colour, lv
 static void swipe(lv_event_t *e);
 static void show(lv_obj_t *o, bool on) { if (on) lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); }
 
-// ---- hold to sign ------------------------------------------------------------------------
-// A 1.2 s hold anywhere on the proposal screen. On press the band gives way to the rim arc
-// and "Signing..." (the design's Holding frame); release before the end springs back.
+// ---- hold to confirm, swipe to dismiss ---------------------------------------------------
+// A 1.2 s hold anywhere on the screen confirms. Once the finger has stayed put for a moment
+// the band gives way to the rim arc and a "…ing" word (the design's Holding frame); release
+// before the end springs back. A swipe in any direction dismisses. Both the proposal and the
+// pairing screen use this, each with its own arc and its own view swap.
 #define HOLD_MS       1200
-#define HOLD_GRACE_MS 300
+#define HOLD_GRACE_MS 300     // ignore a finger already down when the screen appears
+#define HOLD_SHOW_MS  150     // a swipe starts within this; only a real hold shows the arc
+#define SWIPE_PX      40      // drag this far from the press point and it is a swipe, not a hold
+typedef struct {
+    lv_obj_t *arc;
+    void (*view)(bool on);          // swap the screen between resting and holding
+    bool (*armed)(void);            // NULL = always
+    void (*on_swipe)(lv_dir_t d);   // NULL = a swipe dismisses (s_reject)
+} hold_t;
+static hold_t s_hold_prop, s_hold_pair, s_hold_ledger;
 static uint32_t s_shown_at, s_press_at;
-static bool s_press_counts;
+static bool s_press_counts, s_hold_view;
+
+static bool proposal_armed(void) { return s_armed; }
 
 static void holding_view(bool on)
 {
+    bool paired = s_l_state == UI_PAIR_PAIRED;
+    lv_label_set_text(s_p_lock1, paired ? "Unlock your Ledger" : "Ledger not paired");
+    lv_label_set_text(s_p_lock2, paired ? "Open ETH app" : "Swipe away, pair on Home");
     lv_image_set_src(s_p_bg, on ? &bg_base : (s_armed ? &bg_proposal : &bg_locked));
     show(s_p_arc, on); show(s_p_signing, on);
     show(s_p_btn, !on && s_armed); show(s_p_arrow, !on && s_armed); show(s_p_hold, !on && s_armed);
     show(s_p_lock, !on && !s_armed); show(s_p_lock1, !on && !s_armed); show(s_p_lock2, !on && !s_armed);
 }
 
+static void hold_end(hold_t *h)
+{
+    if (s_hold_view) h->view(false);
+    s_press_counts = s_hold_view = false;
+}
+
+static lv_point_t s_press_pt;
+static bool s_swiped;
+
+static void swiped(hold_t *h, lv_dir_t dir)
+{
+    if (s_swiped) return;
+    s_swiped = true;
+    lv_indev_wait_release(lv_indev_active());
+    hold_end(h);
+    if (h->on_swipe) h->on_swipe(dir);
+    else { s_reject = true; ESP_LOGI(TAG, "swiped away"); }
+}
+
 static void hold_event(lv_event_t *e)
 {
+    hold_t *h = lv_event_get_user_data(e);
     lv_event_code_t code = lv_event_get_code(e);
     uint32_t now = lv_tick_get();
     if (code == LV_EVENT_PRESSED) {
-        s_press_counts = s_armed && (now - s_shown_at) > HOLD_GRACE_MS;
+        s_press_counts = (!h->armed || h->armed()) && (now - s_shown_at) > HOLD_GRACE_MS;
+        s_hold_view = s_swiped = false;
         s_press_at = now;
-        if (s_press_counts) { lv_arc_set_value(s_p_arc, 0); holding_view(true); }
+        lv_indev_get_point(lv_indev_active(), &s_press_pt);
         return;
     }
-    if (code == LV_EVENT_PRESSING && s_press_counts) {
+    if (code == LV_EVENT_PRESSING) {
+        // The touch controller reports slowly, so LVGL's velocity-based gesture can miss a
+        // swipe. Any drag of SWIPE_PX from the press point counts, whatever the speed.
+        lv_point_t p; lv_indev_get_point(lv_indev_active(), &p);
+        int dx = p.x - s_press_pt.x, dy = p.y - s_press_pt.y;
+        if (dx * dx + dy * dy >= SWIPE_PX * SWIPE_PX) {
+            lv_dir_t dir = (dx * dx >= dy * dy) ? (dx > 0 ? LV_DIR_RIGHT : LV_DIR_LEFT) : (dy > 0 ? LV_DIR_BOTTOM : LV_DIR_TOP);
+            swiped(h, dir);
+            return;
+        }
+        if (!s_press_counts) return;
         uint32_t held = now - s_press_at;
-        lv_arc_set_value(s_p_arc, held >= HOLD_MS ? 100 : (int)(held * 100 / HOLD_MS));
+        if (!s_hold_view && held >= HOLD_SHOW_MS) { s_hold_view = true; lv_arc_set_value(h->arc, 0); h->view(true); }
+        if (s_hold_view) lv_arc_set_value(h->arc, held >= HOLD_MS ? 100 : (int)(held * 100 / HOLD_MS));
         if (held >= HOLD_MS) { s_press_counts = false; s_confirm = true; ESP_LOGI(TAG, "hold confirmed"); }
         return;
     }
-    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
-        if (s_press_counts) holding_view(false);
-        s_press_counts = false;
-    }
+    if (code == LV_EVENT_GESTURE) { swiped(h, lv_indev_get_gesture_dir(lv_indev_active())); return; }
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) hold_end(h);
+}
+
+// Full-disc touch layer wired to the hold/swipe handler above.
+static lv_obj_t *touch_layer(lv_obj_t *parent, hold_t *h)
+{
+    lv_obj_t *t = lv_obj_create(parent);
+    lv_obj_remove_style_all(t);
+    lv_obj_set_size(t, 240, 240);
+    lv_obj_set_pos(t, 0, 0);
+    lv_obj_add_flag(t, LV_OBJ_FLAG_CLICKABLE);
+    // A scrollable object swallows the drag as a scroll and LVGL never raises the gesture.
+    lv_obj_clear_flag(t, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_add_event_cb(t, hold_event, LV_EVENT_ALL, h);
+    return t;
+}
+
+// The rim progress arc used while holding.
+static lv_obj_t *rim_arc(lv_obj_t *parent)
+{
+    lv_obj_t *a = lv_arc_create(parent);
+    lv_obj_set_size(a, 232, 232);
+    lv_obj_center(a);
+    lv_arc_set_rotation(a, 270);
+    lv_arc_set_bg_angles(a, 0, 360);
+    lv_arc_set_range(a, 0, 100);
+    lv_arc_set_value(a, 0);
+    lv_obj_remove_style(a, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(a, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(a, 8, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(a, 8, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(a, lv_color_hex(0x1a2334), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(a, lv_color_hex(C_BLUE), LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(a, true, LV_PART_INDICATOR);
+    return a;
+}
+
+// "Hold to …" row: blue disc with the arrow and the label.
+static void hold_row(lv_obj_t *parent, const char *label, lv_obj_t **btn, lv_obj_t **arrow, lv_obj_t **lbl)
+{
+    *btn   = disc(parent, 64, 194, 26, C_BLUE, LV_OPA_COVER);
+    *arrow = image(parent, &ic_arrow, 69, 199);
+    *lbl   = lv_label_create(parent);
+    lv_obj_set_style_text_font(*lbl, &manrope_700_15, LV_PART_MAIN);
+    lv_obj_set_style_text_color(*lbl, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    lv_label_set_text(*lbl, label);
+    lv_obj_set_pos(*lbl, 96, 198);
 }
 
 // ---- screens -----------------------------------------------------------------------------
@@ -204,13 +302,7 @@ static void build_proposal(void)
     lv_obj_center(s_p_pill_text);
 
     // confirm row (armed)
-    s_p_btn   = disc(s, 64, 194, 26, C_BLUE, LV_OPA_COVER);
-    s_p_arrow = image(s, &ic_arrow, 69, 199);
-    s_p_hold  = lv_label_create(s);
-    lv_obj_set_style_text_font(s_p_hold, &manrope_700_15, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s_p_hold, lv_color_hex(C_TEXT), LV_PART_MAIN);
-    lv_label_set_text(s_p_hold, "Hold to sign");
-    lv_obj_set_pos(s_p_hold, 96, 198);
+    hold_row(s, "Hold to sign", &s_p_btn, &s_p_arrow, &s_p_hold);
 
     // locked row
     s_p_lock  = image(s, &ic_lock, 112, 184);
@@ -218,20 +310,7 @@ static void build_proposal(void)
     s_p_lock2 = text(s, &manrope_500_11, C_MUTED, 216, "Open ETH app");
 
     // holding
-    s_p_arc = lv_arc_create(s);
-    lv_obj_set_size(s_p_arc, 232, 232);
-    lv_obj_center(s_p_arc);
-    lv_arc_set_rotation(s_p_arc, 270);
-    lv_arc_set_bg_angles(s_p_arc, 0, 360);
-    lv_arc_set_range(s_p_arc, 0, 100);
-    lv_arc_set_value(s_p_arc, 0);
-    lv_obj_remove_style(s_p_arc, NULL, LV_PART_KNOB);
-    lv_obj_clear_flag(s_p_arc, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_arc_width(s_p_arc, 8, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(s_p_arc, 8, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(s_p_arc, lv_color_hex(0x1a2334), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(s_p_arc, lv_color_hex(C_BLUE), LV_PART_INDICATOR);
-    lv_obj_set_style_arc_rounded(s_p_arc, true, LV_PART_INDICATOR);
+    s_p_arc = rim_arc(s);
     s_p_signing = text(s, &manrope_600_15, C_MUTED, 194, "Signing...");
 
     // advisory (tier 0) stack
@@ -246,13 +325,68 @@ static void build_proposal(void)
     s_a_unit   = text(s, &manrope_700_16, C_TEXT,  144, "");
     s_a_detail = text(s, &manrope_500_15, C_MUTED, 168, "");
 
-    // the whole disc listens for the hold
-    s_p_touch = lv_obj_create(s);
-    lv_obj_remove_style_all(s_p_touch);
-    lv_obj_set_size(s_p_touch, 240, 240);
-    lv_obj_set_pos(s_p_touch, 0, 0);
-    lv_obj_add_flag(s_p_touch, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(s_p_touch, hold_event, LV_EVENT_ALL, NULL);
+    // the whole disc listens for the hold and the swipe
+    s_hold_prop = (hold_t){ .arc = s_p_arc, .view = holding_view, .armed = proposal_armed };
+    s_p_touch = touch_layer(s, &s_hold_prop);
+}
+
+// First-time Ledger pairing: the same 6-digit code shows on the Nano X; hold to accept it
+// here, swipe to refuse. The lit band from the proposal background marks the action.
+static void pairing_view(bool on)
+{
+    show(s_pr_arc, on); show(s_pr_pairing, on);
+    show(s_pr_btn, !on); show(s_pr_arrow, !on); show(s_pr_hold, !on);
+}
+
+static void build_pairing(void)
+{
+    lv_obj_t *s = s_scr[UI_PAIRING] = screen(&bg_proposal, NULL);
+    image(s, &ic_ledger, 106, 22);
+    text(s, &manrope_700_20, C_TEXT, 58, "Same code on");
+    text(s, &manrope_700_20, C_TEXT, 82, "your Nano X?");
+    s_pr_code = text(s, &manrope_800_36, C_TEXT, 118, "000 000");
+    text(s, &manrope_500_11, C_MUTED, 160, "Swipe away to refuse");
+    hold_row(s, "Hold to pair", &s_pr_btn, &s_pr_arrow, &s_pr_hold);
+    s_pr_arc = rim_arc(s);
+    s_pr_pairing = text(s, &manrope_600_15, C_MUTED, 194, "Pairing...");
+    s_hold_pair = (hold_t){ .arc = s_pr_arc, .view = pairing_view };
+    touch_layer(s, &s_hold_pair);
+    pairing_view(false);
+}
+
+// LEDGER: swipe right from HOME. Not paired → hold to pair; paired → hold to remove the bond;
+// removed → a short confirmation with no action row.
+static void load_dir(ui_state_t st, lv_screen_load_anim_t anim);
+static void ledger_view(bool on)
+{
+    bool action = s_l_state != UI_PAIR_REMOVED;
+    lv_image_set_src(s_l_bg, action && !on ? &bg_proposal : &bg_base);
+    show(s_l_arc, on); show(s_l_doing, on);
+    show(s_l_btn, !on && action); show(s_l_arrow, !on && action); show(s_l_hold, !on && action);
+}
+static bool ledger_armed(void) { return s_l_state != UI_PAIR_REMOVED; }
+static void ledger_swipe(lv_dir_t d) { if (d == LV_DIR_LEFT) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_LEFT); }
+
+static void build_ledger(void)
+{
+    // Action row inside the lit band, as on the proposal; the label is one size smaller and
+    // the disc a little left so "Hold to remove" clears the rim.
+    lv_obj_t *s = s_scr[UI_LEDGER] = screen(&bg_proposal, &s_l_bg);
+    image(s, &ic_ledger, 106, 30);
+    s_l_title  = text(s, &manrope_700_26, C_TEXT,  72,  "Not paired");
+    s_l_detail = text(s, &manrope_500_13, C_MUTED, 108, "Your Nano X");
+    s_l_btn    = disc(s, 56, 194, 26, C_BLUE, LV_OPA_COVER);
+    s_l_arrow  = image(s, &ic_arrow, 61, 199);
+    s_l_hold   = lv_label_create(s);
+    lv_obj_set_style_text_font(s_l_hold, &manrope_700_13, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_l_hold, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    lv_label_set_text(s_l_hold, "Hold to pair");
+    lv_obj_set_pos(s_l_hold, 90, 200);
+    s_l_arc    = rim_arc(s);
+    s_l_doing  = text(s, &manrope_600_15, C_MUTED, 194, "Pairing...");
+    s_hold_ledger = (hold_t){ .arc = s_l_arc, .view = ledger_view, .armed = ledger_armed, .on_swipe = ledger_swipe };
+    touch_layer(s, &s_hold_ledger);
+    ledger_view(false);
 }
 
 static void build_wait(void)
@@ -366,6 +500,8 @@ static void load_dir(ui_state_t st, lv_screen_load_anim_t anim)
 {
     lv_screen_load_anim(s_scr[st], anim, 220, 0, false);
     s_state = st;
+    s_shown_at = lv_tick_get();
+    s_press_counts = s_hold_view = false;
 }
 
 static void swipe(lv_event_t *e)
@@ -374,6 +510,7 @@ static void swipe(lv_event_t *e)
     lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_active());
     lv_indev_wait_release(lv_indev_active());       // the swipe must not also count as a tap
     if (s_state == UI_HOME  && dir == LV_DIR_LEFT)  load_dir(UI_PHOTO, LV_SCR_LOAD_ANIM_MOVE_LEFT);
+    if (s_state == UI_HOME  && dir == LV_DIR_RIGHT) load_dir(UI_LEDGER, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
     if (s_state == UI_PHOTO && dir == LV_DIR_RIGHT) load_dir(UI_HOME,  LV_SCR_LOAD_ANIM_MOVE_RIGHT);
 }
 
@@ -388,7 +525,7 @@ void ui_init(void)
     if (!display_ready()) { ESP_LOGW(TAG, "no panel - UI disabled, signing runs headless"); return; }
     if (!lvgl_port_lock(0)) return;
     build_home(); build_proposal(); build_wait(); build_result(); build_blocked(); build_idle();
-    build_photo();
+    build_photo(); build_pairing(); build_ledger();
     lv_screen_load(s_scr[UI_HOME]);
     s_state = UI_HOME;
     lvgl_port_unlock();
@@ -411,11 +548,15 @@ void ui_set_status(const ui_status_t *s)
     s_status = *s;
     if (!display_ready() || !s_home_line1) return;
     if (!lvgl_port_lock(0)) return;
-    // Say what the wearer can act on, not what the system is doing.
-    if (!s->wifi)        { lv_label_set_text(s_home_line1, "No wifi");     lv_label_set_text(s_home_line2, "Waiting for the network"); }
-    else if (!s->ledger) { lv_label_set_text(s_home_line1, "Not ready");   lv_label_set_text(s_home_line2, "Unlock your Ledger"); }
-    else if (!s->brain)  { lv_label_set_text(s_home_line1, "Watching");    lv_label_set_text(s_home_line2, "Waiting for the agent"); }
-    else                 { lv_label_set_text(s_home_line1, "Watching");    lv_label_set_text(s_home_line2, "Ready for proposals"); }
+    // The pendant is its own thing; the Ledger is one line of status, never the headline.
+    const char *l1 = s->wifi ? "Watching" : "Offline";
+    const char *l2 = !s->wifi   ? "No wifi" :
+                     !s->ledger ? (s_l_state == UI_PAIR_PAIRED ? "Ledger away" : "Ledger not paired") :
+                     !s->brain  ? "Waiting for the agent" : "Ready for proposals";
+    lv_label_set_text(s_home_line1, l1);
+    lv_label_set_text(s_home_line2, l2);
+    // A tier-2 proposal waiting on the Ledger arms itself the moment the Ledger answers.
+    if (s_state == UI_PROPOSAL && s_p_tier == 2 && !s_hold_view) { s_armed = s->ledger; holding_view(false); }
     lvgl_port_unlock();
 }
 
@@ -493,6 +634,7 @@ void ui_show_proposal(const amulet_proposal_t *p)
         s_armed = (p->tier < 2) || s_status.ledger;
         holding_view(false);
     }
+    s_p_tier = p->tier;
 
     s_press_counts = false;
     s_shown_at = lv_tick_get();
@@ -502,6 +644,42 @@ void ui_show_proposal(const amulet_proposal_t *p)
     s_state = UI_PROPOSAL;
     lvgl_port_unlock();
 }
+
+void ui_show_pairing(uint32_t code)
+{
+    if (!display_ready() || !s_pr_code || !lvgl_port_lock(0)) return;
+    char buf[12];
+    snprintf(buf, sizeof buf, "%03lu %03lu", (unsigned long)(code / 1000 % 1000), (unsigned long)(code % 1000));
+    lv_label_set_text(s_pr_code, buf);
+    pairing_view(false);
+    s_armed = true;
+    s_press_counts = s_hold_view = false;
+    s_shown_at = lv_tick_get();
+    s_confirm = s_reject = false;
+    display_backlight(100);
+    lv_screen_load(s_scr[UI_PAIRING]);
+    s_state = UI_PAIRING;
+    lvgl_port_unlock();
+}
+
+void ui_set_pairing(ui_pair_t st, const char *addr, const char *note)
+{
+    if (!display_ready() || !s_l_title || !lvgl_port_lock(0)) return;
+    s_l_state = st;
+    static const char *title[] = { "Not paired", "Paired", "Removed" };
+    lv_label_set_text(s_l_title, title[st]);
+    char d[24] = "Your Nano X";
+    if (st == UI_PAIR_PAIRED && addr && strlen(addr) >= 10)
+        snprintf(d, sizeof d, "Nano X  %.6s..%s", addr, addr + strlen(addr) - 4);
+    if (st == UI_PAIR_REMOVED) snprintf(d, sizeof d, "Pair again any time");
+    lv_label_set_text(s_l_detail, note ? note : d);
+    lv_label_set_text(s_l_hold,  st == UI_PAIR_PAIRED ? "Hold to remove" : "Hold to pair");
+    lv_label_set_text(s_l_doing, st == UI_PAIR_PAIRED ? "Removing..." : "Pairing...");
+    ledger_view(false);
+    lvgl_port_unlock();
+}
+
+void ui_show_ledger(void) { go(UI_LEDGER); }
 
 void ui_show_ledger_wait(const char *what)
 {
@@ -563,7 +741,7 @@ uint32_t ui_inactive_ms(void)
     return ms;
 }
 
-bool ui_is_resting(void) { return s_state == UI_HOME || s_state == UI_PHOTO; }
+bool ui_is_resting(void) { return s_state == UI_HOME || s_state == UI_PHOTO || s_state == UI_LEDGER; }
 
 bool ui_take_confirm(void) { bool c = s_confirm; s_confirm = false; return c; }
 bool ui_take_reject(void)  { bool r = s_reject;  s_reject  = false; return r; }

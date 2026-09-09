@@ -16,6 +16,15 @@
 
 // Starts the NimBLE host. Call once.
 void ledger_ble_init(void);
+// First-time pairing uses numeric comparison: the Nano X and the pendant both show a 6-digit
+// code and each side must confirm. Register a prompt that shows `code` and returns true to
+// accept. It is called from inside ledger_ble_connect() on the caller's task and may block.
+// Without a prompt the code is logged and auto-accepted (headless bring-up only).
+void ledger_ble_set_pairing_prompt(bool (*prompt)(uint32_t code));
+// Whether a Ledger bond is stored. ledger_ble_forget() disconnects and deletes every bond, so the
+// next connect shows the pairing code again (the Nano X keeps its side; it re-pairs happily).
+bool ledger_ble_is_bonded(void);
+void ledger_ble_forget(void);
 // Scan for a Ledger (service UUID or name prefix "Nano X"), connect, subscribe, negotiate MTU.
 // Blocks up to timeout_ms. Returns 0 on success.
 int ledger_ble_connect(uint32_t timeout_ms);

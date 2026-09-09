@@ -13,7 +13,11 @@ typedef enum {
     UI_BLOCKED,       // cannot proceed, with a reason
     UI_IDLE,          // reactor face after 30 s at rest; any touch wakes
     UI_PHOTO,         // swipe left from HOME; swipe right returns
+    UI_PAIRING,       // first-time Ledger pairing: compare the code, hold to accept
+    UI_LEDGER,        // swipe right from HOME: pair / paired / removed
 } ui_state_t;
+
+typedef enum { UI_PAIR_NONE, UI_PAIR_PAIRED, UI_PAIR_REMOVED } ui_pair_t;
 
 // Readiness shown on HOME and used to gate the slider on a tier-2 proposal.
 typedef struct {
@@ -33,6 +37,9 @@ void ui_show_ledger_wait(const char *what);   // e.g. "Confirm on your Nano X"
 void ui_show_result(bool ok, const char *detail);  // tx hash, or the failure reason
 void ui_show_blocked(const char *reason);          // "Brain offline", "Unlock your Ledger", ...
 void ui_show_idle(void);                           // the reactor; backlight to half
+void ui_show_pairing(uint32_t code);               // 6-digit numeric comparison; hold = accept, swipe = refuse
+void ui_set_pairing(ui_pair_t st, const char *addr, const char *note);  // LEDGER screen; note overrides the detail line
+void ui_show_ledger(void);
 bool ui_is_resting(void);                          // HOME or its swipe sibling
 uint32_t ui_inactive_ms(void);                     // ms since the wearer last touched the panel
 ui_state_t ui_state(void);
