@@ -155,7 +155,18 @@ export class Brain {
     }
 
     // 8. The wrist decides.
-    const decision = await d.pendant.awaitDecision(p.id, PROPOSAL_TTL_S * 1000);
+    let decision = await d.pendant.awaitDecision(p.id, PROPOSAL_TTL_S * 1000);
+    if (decision.result === "expired" && c.action !== "ADVISORY") {
+      // The pendant may have signed and lost the link before its answer arrived. The chain
+      // is the record: a nonce past the proposal's means the transaction went out.
+      try {
+        const n = await d.sepolia.getTransactionCount({ address: this.ledger });
+        if (n > p.tx.nonce) {
+          decision = { type: "decision", id: p.id, result: "approved" };
+          d.log(`no answer from the pendant, but the Ledger nonce is ${n} > ${p.tx.nonce}: treating as approved`);
+        }
+      } catch { /* keep expired */ }
+    }
     this.pending = undefined;
     d.pendant.setState("watching");
     d.log(`DECISION ${p.id}: ${decision.result}${decision.txHash ? ` tx ${decision.txHash}` : ""}`);
