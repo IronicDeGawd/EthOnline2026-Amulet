@@ -457,6 +457,9 @@ void app_main(void)
         }
 
         bool prop_confirm = ui_state() == UI_PROPOSAL && ui_take_confirm();   // taken once
+        // An advisory (tier 0) carries nothing to sign; the screen never arms the hold for it,
+        // and this guard keeps a stray confirm from reaching the Ledger with the placeholder tx.
+        if (prop_confirm && s_pending.tier == 0) prop_confirm = false;
         if (prop_confirm && !st.ledger) {
             // Held while the Ledger was not answering: go and find it (pairing runs inside if
             // there is no bond yet), then the loop below puts the proposal back on screen.
@@ -483,7 +486,9 @@ void app_main(void)
 
         if (ui_state() == UI_PROPOSAL && ui_take_reject()) {
             send_decision(s_pending.id, "rejected", NULL);
+            ui_show_dismissed(s_pending.tier == 0);
             s_have_pending = false;
+            vTaskDelay(pdMS_TO_TICKS(1800));
             ui_show_home();
         }
 
@@ -506,7 +511,7 @@ void app_main(void)
                 if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
                 // Not paired: back to this screen with the reason on its detail line.
                 ui_set_pairing(bonded ? UI_PAIR_PAIRED : UI_PAIR_NONE, addr,
-                               bonded ? NULL : (sw ? ledger_reason(sw) : "Not found. Unlocked, Bluetooth on?"));
+                               bonded ? NULL : (sw ? ledger_reason(sw) : "Not found. Is it unlocked?"));
                 if (ui_state() != UI_LEDGER) ui_show_ledger();
             }
         }
