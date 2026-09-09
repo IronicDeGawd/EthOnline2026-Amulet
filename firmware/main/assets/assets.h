@@ -30,6 +30,8 @@ LV_IMAGE_DECLARE(bg_locked);
 LV_IMAGE_DECLARE(bg_sent);
 LV_IMAGE_DECLARE(bg_notsent);
 LV_IMAGE_DECLARE(bg_blocked);
+LV_IMAGE_DECLARE(bg_reactor);   // idle face: plate + core glow; the rings are live arcs
+LV_IMAGE_DECLARE(bg_photo);     // swipe left from HOME
 
 // Stroke icons, RGB565A8.
 LV_IMAGE_DECLARE(ic_plane);

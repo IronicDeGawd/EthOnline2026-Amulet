@@ -11,6 +11,8 @@ typedef enum {
     UI_LEDGER_WAIT,   // streamed to the Nano X, waiting for the button
     UI_RESULT,        // broadcast outcome
     UI_BLOCKED,       // cannot proceed, with a reason
+    UI_IDLE,          // reactor face after 30 s at rest; any touch wakes
+    UI_PHOTO,         // swipe left from HOME; swipe right returns
 } ui_state_t;
 
 // Readiness shown on HOME and used to gate the slider on a tier-2 proposal.
@@ -29,6 +31,9 @@ void ui_show_proposal(const amulet_proposal_t *p);
 void ui_show_ledger_wait(const char *what);   // e.g. "Confirm on your Nano X"
 void ui_show_result(bool ok, const char *detail);  // tx hash, or the failure reason
 void ui_show_blocked(const char *reason);          // "Brain offline", "Unlock your Ledger", ...
+void ui_show_idle(void);                           // the reactor; backlight to half
+bool ui_is_resting(void);                          // HOME or its swipe sibling
+uint32_t ui_inactive_ms(void);                     // ms since the wearer last touched the panel
 ui_state_t ui_state(void);
 
 // True once for each completed slide, then cleared. Polled by the main flow so the UI never

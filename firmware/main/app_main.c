@@ -160,7 +160,6 @@ done:
 // task below, where blocking for a human to press a Ledger button is fine.
 static amulet_proposal_t s_pending;
 static volatile bool s_have_pending;
-
 static void on_ws_rx(const char *data, size_t len)
 {
     char err[64];
@@ -316,9 +315,9 @@ void app_main(void)
     // be reaching for it, so retry while telling them exactly what to do.
     char addr[43] = {0};
     ui_show_blocked("looking for your Ledger");
-    for (int attempt = 0; attempt < 20 && !addr[0]; attempt++) {
+    for (int attempt = 0; attempt < 3 && !addr[0]; attempt++) {
         uint16_t sw = 0;
-        if (ledger_link_ensure(attempt == 0 ? 30000 : 8000, &sw)) {
+        if (ledger_link_ensure(attempt == 0 ? 8000 : 4000, &sw)) {
             uint8_t apdu[64], out[128]; size_t n = 0;
             size_t alen = apdu_eth_get_address(apdu, sizeof apdu, ETH_PATH, 5, false);
             uint8_t pk[65];
@@ -334,7 +333,7 @@ void app_main(void)
         ui_show_blocked(ledger_reason(sw));
         vTaskDelay(pdMS_TO_TICKS(3000));
     }
-    if (!addr[0]) ESP_LOGW(TAG, "carrying on without a Ledger address");
+    if (!addr[0]) ESP_LOGW(TAG, "no Ledger yet - HOME will say so and keep looking");
 
     ui_set_status(&st);
     ui_show_home();
@@ -358,7 +357,9 @@ void app_main(void)
     while (1) {
         // Re-check readiness periodically. The Ledger auto-locks, and the pendant should say
         // so on HOME rather than discovering it only when you try to sign.
-        if (ui_state() == UI_HOME) {
+        if (ui_is_resting() && ui_inactive_ms() > AMULET_IDLE_MS) ui_show_idle();
+
+        if (ui_is_resting() || ui_state() == UI_IDLE) {
             time_t now = time(NULL); struct tm tmv; localtime_r(&now, &tmv);
             if (tmv.tm_year > 100) {            // SNTP has answered
                 char d[16], t[8];

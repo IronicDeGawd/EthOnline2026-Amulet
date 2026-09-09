@@ -23,7 +23,7 @@ static ui_state_t s_state = UI_HOME;
 static bool s_confirm, s_reject, s_armed;
 static ui_status_t s_status;
 
-static lv_obj_t *s_scr[5];
+static lv_obj_t *s_scr[7];
 
 // HOME
 static lv_obj_t *s_home_line1, *s_home_line2, *s_home_date, *s_home_time;
@@ -39,6 +39,13 @@ static lv_obj_t *s_p_touch;
 static lv_obj_t *s_w_line2;
 static lv_obj_t *s_r_bg, *s_r_title, *s_r_detail;
 static lv_obj_t *s_b_line1, *s_b_line2, *s_b_d1, *s_b_d2;
+// IDLE: the reactor. Rings are arcs on the core-glow bitmap; each carries its base angle in
+// user_data and one animation per ring group sweeps the rotation.
+#define OUTER_N 8
+#define INNER_N 12
+static lv_obj_t *s_outer[OUTER_N], *s_inner[INNER_N], *s_bloom;
+// swipe sibling of HOME
+static lv_obj_t *s_w_d1, *s_w_d2;
 
 // ---- helpers -----------------------------------------------------------------------------
 
@@ -92,6 +99,7 @@ static lv_obj_t *disc(lv_obj_t *parent, int x, int y, int d, uint32_t colour, lv
     return o;
 }
 
+static void swipe(lv_event_t *e);
 static void show(lv_obj_t *o, bool on) { if (on) lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); }
 
 // ---- hold to sign ------------------------------------------------------------------------
@@ -137,6 +145,7 @@ static void hold_event(lv_event_t *e)
 static void build_home(void)
 {
     lv_obj_t *s = s_scr[UI_HOME] = screen(&bg_home, NULL);
+    lv_obj_add_event_cb(s, swipe, LV_EVENT_GESTURE, NULL);
     s_home_line1 = text(s, &manrope_700_20, C_TEXT,  98,  "Watching");
     s_home_line2 = text(s, &manrope_500_13, C_MUTED, 122, "Ready for proposals");
     s_home_date  = text(s, &manrope_600_15, C_MUTED, 150, "");
@@ -230,8 +239,8 @@ static void build_wait(void)
     lv_obj_set_style_arc_width(sp, 4, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(sp, lv_color_hex(0x232d3f), LV_PART_MAIN);
     lv_obj_set_style_arc_color(sp, lv_color_hex(C_BLUE), LV_PART_INDICATOR);
-    text(s, &manrope_500_13, C_MUTED, 164, "Check the amount and");
-    text(s, &manrope_500_13, C_MUTED, 180, "recipient on your device.");
+    s_w_d1 = text(s, &manrope_500_13, C_MUTED, 164, "Check the amount and");
+    s_w_d2 = text(s, &manrope_500_13, C_MUTED, 180, "recipient on your device.");
 }
 
 static void build_result(void)
@@ -250,11 +259,106 @@ static void build_blocked(void)
     s_b_d2    = text(s, &manrope_500_13, C_MUTED, 180, "ETH app");
 }
 
+// ---- reactor (idle) ----------------------------------------------------------------------
+// An original glowing core with two counter-rotating segmented rings and a slow pulse. All
+// live LVGL: no GIF, no SD card, no flash beyond the one core bitmap. If a custom loop is
+// ever wanted, /sdcard/idle.gif can replace this screen; see context/plan/pendant-ui.md.
+
+static lv_obj_t *segment_arc(lv_obj_t *parent, int diameter, int span_deg, int base_deg,
+                             int width, uint32_t colour, lv_opa_t opa)
+{
+    lv_obj_t *a = lv_arc_create(parent);
+    lv_obj_set_size(a, diameter, diameter);
+    lv_obj_center(a);
+    lv_arc_set_bg_angles(a, 0, span_deg);
+    lv_arc_set_rotation(a, base_deg);
+    lv_obj_remove_style(a, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(a, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_arc_width(a, width, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(a, lv_color_hex(colour), LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(a, opa, LV_PART_MAIN);
+    lv_obj_set_style_arc_rounded(a, true, LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(a, LV_OPA_TRANSP, LV_PART_INDICATOR);
+    lv_obj_set_user_data(a, (void *)(intptr_t)base_deg);
+    return a;
+}
+
+static void spin_outer(void *v, int32_t t) { (void)v; for (int i = 0; i < OUTER_N; i++) lv_arc_set_rotation(s_outer[i], ((int)(intptr_t)lv_obj_get_user_data(s_outer[i]) + t) % 360); }
+static void spin_inner(void *v, int32_t t) { (void)v; for (int i = 0; i < INNER_N; i++) lv_arc_set_rotation(s_inner[i], ((int)(intptr_t)lv_obj_get_user_data(s_inner[i]) + 360 - t) % 360); }
+static void pulse(void *v, int32_t o) { (void)v; lv_obj_set_style_bg_opa(s_bloom, (lv_opa_t)o, LV_PART_MAIN); }
+
+static void idle_wake(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_PRESSED) return;
+    display_backlight(100);
+    lv_screen_load(s_scr[UI_HOME]);
+    s_state = UI_HOME;
+}
+
+static void build_idle(void)
+{
+    lv_obj_t *s = s_scr[UI_IDLE] = screen(&bg_reactor, NULL);
+
+    // outer ring: 8 segments of 30 degrees on a 45-degree pitch, slow clockwise
+    for (int i = 0; i < OUTER_N; i++)
+        s_outer[i] = segment_arc(s, 204, 30, 270 + i * 45, 6, C_BLUE, LV_OPA_90);
+    // inner ring: 12 short ticks, faster, counter-clockwise, lighter
+    for (int i = 0; i < INNER_N; i++)
+        s_inner[i] = segment_arc(s, 160, 12, 270 + i * 30, 4, 0x9cc2ff, LV_OPA_60);
+    // the core breathes: a white disc over the baked glow, opacity 0 -> 70 and back
+    s_bloom = disc(s, 120 - 30, 120 - 30, 60, 0xffffff, LV_OPA_TRANSP);
+
+    lv_anim_t a;
+    lv_anim_init(&a); lv_anim_set_var(&a, s); lv_anim_set_exec_cb(&a, spin_outer);
+    lv_anim_set_values(&a, 0, 360); lv_anim_set_duration(&a, 12000); lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&a);
+    lv_anim_init(&a); lv_anim_set_var(&a, s); lv_anim_set_exec_cb(&a, spin_inner);
+    lv_anim_set_values(&a, 0, 360); lv_anim_set_duration(&a, 7000); lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_start(&a);
+    lv_anim_init(&a); lv_anim_set_var(&a, s_bloom); lv_anim_set_exec_cb(&a, pulse);
+    lv_anim_set_values(&a, 0, 70); lv_anim_set_duration(&a, 1600); lv_anim_set_playback_duration(&a, 1600);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE); lv_anim_set_path_cb(&a, lv_anim_path_ease_in_out);
+    lv_anim_start(&a);
+
+    lv_obj_t *touch = lv_obj_create(s);
+    lv_obj_remove_style_all(touch);
+    lv_obj_set_size(touch, 240, 240);
+    lv_obj_set_pos(touch, 0, 0);
+    lv_obj_add_flag(touch, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(touch, idle_wake, LV_EVENT_PRESSED, NULL);
+}
+
+// ---- swipe sibling ------------------------------------------------------------------------
+// Smartwatch-style: HOME in the middle, a photo to the left. Swipe left to see it, right to
+// come back. A proposal always jumps straight in regardless.
+
+static void load_dir(ui_state_t st, lv_screen_load_anim_t anim)
+{
+    lv_screen_load_anim(s_scr[st], anim, 220, 0, false);
+    s_state = st;
+}
+
+static void swipe(lv_event_t *e)
+{
+    (void)e;
+    lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_active());
+    lv_indev_wait_release(lv_indev_active());       // the swipe must not also count as a tap
+    if (s_state == UI_HOME  && dir == LV_DIR_LEFT)  load_dir(UI_PHOTO, LV_SCR_LOAD_ANIM_MOVE_LEFT);
+    if (s_state == UI_PHOTO && dir == LV_DIR_RIGHT) load_dir(UI_HOME,  LV_SCR_LOAD_ANIM_MOVE_RIGHT);
+}
+
+static void build_photo(void)
+{
+    lv_obj_t *s = s_scr[UI_PHOTO] = screen(&bg_photo, NULL);
+    lv_obj_add_event_cb(s, swipe, LV_EVENT_GESTURE, NULL);
+}
+
 void ui_init(void)
 {
     if (!display_ready()) { ESP_LOGW(TAG, "no panel - UI disabled, signing runs headless"); return; }
     if (!lvgl_port_lock(0)) return;
-    build_home(); build_proposal(); build_wait(); build_result(); build_blocked();
+    build_home(); build_proposal(); build_wait(); build_result(); build_blocked(); build_idle();
+    build_photo();
     lv_screen_load(s_scr[UI_HOME]);
     s_state = UI_HOME;
     lvgl_port_unlock();
@@ -348,6 +452,7 @@ void ui_show_proposal(const amulet_proposal_t *p)
     s_press_counts = false;
     s_shown_at = lv_tick_get();
     s_confirm = s_reject = false;
+    display_backlight(100);
     lv_screen_load(s_scr[UI_PROPOSAL]);
     s_state = UI_PROPOSAL;
     lvgl_port_unlock();
@@ -355,7 +460,13 @@ void ui_show_proposal(const amulet_proposal_t *p)
 
 void ui_show_ledger_wait(const char *what)
 {
-    (void)what;   // the design names the device; the copy is fixed
+    // Default is the signing copy; Receive passes "Check the address".
+    if (display_ready() && s_w_d1 && lvgl_port_lock(0)) {
+        bool addr = what && strstr(what, "address");
+        lv_label_set_text(s_w_d1, addr ? "Check the address" : "Check the amount and");
+        lv_label_set_text(s_w_d2, addr ? "on your device." : "recipient on your device.");
+        lvgl_port_unlock();
+    }
     go(UI_LEDGER_WAIT);
 }
 
@@ -390,6 +501,24 @@ void ui_show_blocked(const char *reason)
     }
     go(UI_BLOCKED);
 }
+
+void ui_show_idle(void)
+{
+    if (!display_ready()) return;
+    display_backlight(50);
+    go(UI_IDLE);
+}
+
+uint32_t ui_inactive_ms(void)
+{
+    if (!display_ready()) return 0;
+    if (!lvgl_port_lock(0)) return 0;
+    uint32_t ms = lv_display_get_inactive_time(NULL);
+    lvgl_port_unlock();
+    return ms;
+}
+
+bool ui_is_resting(void) { return s_state == UI_HOME || s_state == UI_PHOTO; }
 
 bool ui_take_confirm(void) { bool c = s_confirm; s_confirm = false; return c; }
 bool ui_take_reject(void)  { bool r = s_reject;  s_reject  = false; return r; }

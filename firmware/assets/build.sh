@@ -48,4 +48,4 @@ python "$LVGL/scripts/LVGLImage.py" --ofmt C --cf RGB565 --rgb565dither -o "$OUT
 python "$LVGL/scripts/LVGLImage.py" --ofmt C --cf RGB565A8            -o "$OUT" src/icons
 # LVGLImage.py writes #include "lvgl/lvgl.h"; the IDF component exposes plain lvgl.h.
 sed -i '' 's|#include "lvgl/lvgl.h"|#include "lvgl.h"|' "$OUT"/bg_*.c "$OUT"/ic_*.c
-echo "assets regenerated in $OUT"
+echo "assets regenerated in $OUT - run: idf.py reconfigure (the source glob is read at configure time)"

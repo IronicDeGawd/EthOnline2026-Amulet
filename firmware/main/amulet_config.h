@@ -1,4 +1,5 @@
 #pragma once
+#define AMULET_IDLE_MS      30000   // HOME -> reactor face after this much no touch
 #define AMULET_TZ           "IST-5:30"   // POSIX TZ for the clock on HOME
 #define AMULET_CHAIN_ID     11155111ULL                                  // Sepolia
 #define AMULET_RPC_URL      "https://ethereum-sepolia-rpc.publicnode.com"

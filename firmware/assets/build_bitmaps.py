@@ -110,6 +110,8 @@ if __name__ == "__main__":
     plate = to_pil(R.base())
     to_pil(R.base()).save(f"{OUT_BG}/bg_base.png")
     orb(to_pil(R.aurora())).save(f"{OUT_BG}/bg_home.png")
+    orb(to_pil(R.horizon())).save(f"{OUT_BG}/bg_home_horizon.png")
+    orb(to_pil(R.nebula())).save(f"{OUT_BG}/bg_home_nebula.png")
     band(plate, 184, "lit").save(f"{OUT_BG}/bg_proposal.png")
     band(plate, 180, "dark").save(f"{OUT_BG}/bg_locked.png")
     badge(to_pil(R.tinted("#22c55e", 0.32)), 76, GREEN, "check").save(f"{OUT_BG}/bg_sent.png")
@@ -121,6 +123,19 @@ if __name__ == "__main__":
         d.rounded_rectangle((ox+4*u, oy+11*u, ox+20*u, oy+21*u), radius=2*u, outline=ORANGE+(255,), width=int(2*u))
         d.arc((ox+8*u, oy+3*u, ox+16*u, oy+15*u), 180, 360, fill=ORANGE+(255,), width=int(2*u))
     overlay(blocked, ring).save(f"{OUT_BG}/bg_blocked.png")
+
+    # Reactor idle face: the plate with the core glow baked in. The rotating rings are live
+    # LVGL arcs, so only the part that never moves is a bitmap.
+    reactor = to_pil(R.base(glow_amt=0.0))
+    reactor = glow(reactor, 120, 120, 62, (60, 140, 255), 0.55, 30)      # wide halo
+    reactor = glow(reactor, 120, 120, 34, (150, 210, 255), 0.75, 12)     # inner bloom
+    def core(d, s):
+        for i in range(26, 0, -1):
+            t = i/26
+            col = (int(255-(255-120)*t*0.8), int(255-(255-200)*t*0.6), 255, 255)
+            d.ellipse(((120-i)*s, (120-i)*s, (120+i)*s, (120+i)*s), fill=col)
+        d.ellipse(((120-58)*s, (120-58)*s, (120+58)*s, (120+58)*s), outline=(90,160,255,110), width=int(1.5*s))
+    overlay(reactor, core).save(f"{OUT_BG}/bg_reactor.png")
 
     icon("ic_plane", 28, BLUE, ic_plane)
     icon("ic_arrow", 16, WHITE, ic_arrow)
