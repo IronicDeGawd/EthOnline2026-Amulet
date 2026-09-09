@@ -486,7 +486,9 @@ void app_main(void)
 
         if (ui_state() == UI_PROPOSAL && ui_take_reject()) {
             send_decision(s_pending.id, "rejected", NULL);
+            ui_show_dismissed(s_pending.tier == 0);
             s_have_pending = false;
+            vTaskDelay(pdMS_TO_TICKS(1800));
             ui_show_home();
         }
 

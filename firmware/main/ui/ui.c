@@ -796,6 +796,19 @@ void ui_show_result(bool ok, const char *detail)
     go(UI_RESULT);
 }
 
+// A swipe deserves an answer too: the result screen on the plain background, no red.
+void ui_show_dismissed(bool advisory)
+{
+    if (display_ready() && s_r_title && lvgl_port_lock(0)) {
+        lv_image_set_src(s_r_bg, &bg_base);
+        lv_label_set_text(s_r_title, advisory ? "Dismissed" : "Declined");
+        lv_obj_set_style_text_font(s_r_detail, &manrope_500_13, LV_PART_MAIN);
+        lv_label_set_text(s_r_detail, advisory ? "Noted, nothing to do" : "Nothing was signed");
+        lvgl_port_unlock();
+    }
+    go(UI_RESULT);
+}
+
 void ui_show_blocked(const char *reason)
 {
     if (display_ready() && s_b_line1 && lvgl_port_lock(0)) {
