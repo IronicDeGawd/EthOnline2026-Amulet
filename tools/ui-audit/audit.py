@@ -31,7 +31,7 @@ def chord(y):
 # x=None means centred in the 240 disc; mode: CLIP one line, DOT n lines, SCROLL, LEFT (x-anchored)
 ITEMS = [
     ("HOME", "line1", "manrope_700_20", 98, None, 240, "CLIP", ["Watching", "Offline"]),
-    ("HOME", "line2", "manrope_500_13", 122, None, 240, "CLIP", ["Ledger not paired", "Waiting for the agent", "Ready for proposals", "Ledger away"]),
+    ("HOME", "line2", "manrope_500_13", 122, None, 240, "CLIP", ["Ledger not paired", "Waiting for the agent", "Ready for proposals", "Ledger away", "Policy not refreshed"]),
     ("HOME", "date", "manrope_600_15", 150, None, 240, "CLIP", ["Wed 10", "Sat 31"]),
     ("HOME", "time", "manrope_800_36", 166, None, 240, "CLIP", ["23:59", "00:00"]),
     ("HOME", "battery %", "manrope_500_13", 206, 118, 40, "LEFT", ["100%"]),
@@ -69,7 +69,8 @@ ITEMS = [
     ("WAIT", "line2", "manrope_700_22", 88, None, 240, "CLIP", ["your Nano X"]),
     ("WAIT", "d1", "manrope_500_13", 164, None, 240, "CLIP", ["Check the amount and", "Check the address"]),
     ("WAIT", "d2", "manrope_500_13", 180, None, 240, "CLIP", ["recipient on your device.", "on your device."]),
-    ("RESULT", "title", "manrope_700_26", 120, None, 240, "CLIP", ["Sent", "Not sent", "Declined", "Dismissed"]),
+    ("RESULT", "title", "manrope_700_26", 120, None, 240, "CLIP", ["Sent", "Not sent", "Declined", "Dismissed", "Refused"]),
+    ("RESULT", "policy reason", "manrope_500_13", 158, 35, 170, "DOT2", ["No policy on the pendant yet", "Wrong chain for this policy", "Target is not in the policy", "Call not allowed on this target", "Value over the policy cap", "Gas limit out of range", "Proposal already expired", "Outside the policy"]),
     ("RESULT", "dismissed detail", "manrope_500_13", 158, 35, 170, "DOT2", ["Nothing was signed", "Noted, nothing to do"]),
     ("RESULT", "detail ok (mono)", "plexmono_500_15", 158, None, 240, "CLIP", ["0x529efe0b..d3ad"]),
     ("RESULT", "detail fail", "manrope_500_13", 158, 35, 170, "DOT2", ["Ledger refused", "encode failed", "no route to RPC, error 0x8001", "RPC answered HTTP 403", "insufficient funds for gas * price + value"]),

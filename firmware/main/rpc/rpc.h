@@ -4,6 +4,7 @@
 #include <stdbool.h>
 // Minimal Ethereum JSON-RPC over HTTPS.
 void rpc_init(const char *url);
+bool rpc_eth_call(const char *to_hex, const char *data_hex, char *out, size_t out_cap);   // eth_call, hex result
 bool rpc_get_nonce(const char *addr_hex, uint64_t *nonce);           // eth_getTransactionCount pending
 bool rpc_gas_price(uint8_t out_be32[32]);                             // eth_gasPrice (legacy txs)
 // EIP-1559 fees: tip from eth_maxPriorityFeePerGas, ceiling = 2*baseFeePerGas + tip.

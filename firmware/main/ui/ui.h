@@ -24,6 +24,7 @@ typedef struct {
     bool wifi;
     bool brain;       // websocket connected to the agent
     bool ledger;      // BLE connected AND Ethereum app answering
+    bool policy_stale; // no ENS policy read for a day (or never): HOME says so
     uint64_t nonce;
 } ui_status_t;
 
@@ -35,7 +36,8 @@ void ui_show_home(void);
 void ui_show_proposal(const amulet_proposal_t *p);
 void ui_show_ledger_wait(const char *what);   // e.g. "Confirm on your Nano X"
 void ui_show_result(bool ok, const char *detail);  // tx hash, or the failure reason
-void ui_show_dismissed(bool advisory);             // after a swipe: "Declined" / "Dismissed"
+void ui_show_dismissed(bool advisory);
+void ui_show_policy_reject(const char *reason);   // the pendant refused it before the Ledger saw it             // after a swipe: "Declined" / "Dismissed"
 void ui_show_blocked(const char *reason);          // "Brain offline", "Unlock your Ledger", ...
 void ui_show_idle(void);                           // the reactor; backlight to half
 void ui_show_pairing(uint32_t code);               // 6-digit numeric comparison; hold = accept, swipe = refuse

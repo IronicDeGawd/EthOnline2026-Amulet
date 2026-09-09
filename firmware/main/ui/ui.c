@@ -632,6 +632,7 @@ void ui_set_status(const ui_status_t *s)
     const char *l1 = s->wifi ? "Watching" : "Offline";
     const char *l2 = !s->wifi   ? "No wifi" :
                      !s->ledger ? (s_l_state == UI_PAIR_PAIRED ? "Ledger away" : "Ledger not paired") :
+                     s->policy_stale ? "Policy not refreshed" :
                      !s->brain  ? "Waiting for the agent" : "Ready for proposals";
     lv_label_set_text(s_home_line1, l1);
     lv_label_set_text(s_home_line2, l2);
@@ -804,6 +805,19 @@ void ui_show_dismissed(bool advisory)
         lv_label_set_text(s_r_title, advisory ? "Dismissed" : "Declined");
         lv_obj_set_style_text_font(s_r_detail, &manrope_500_13, LV_PART_MAIN);
         lv_label_set_text(s_r_detail, advisory ? "Noted, nothing to do" : "Nothing was signed");
+        lvgl_port_unlock();
+    }
+    go(UI_RESULT);
+}
+
+// The pendant's own no: the proposal broke the ENS policy, so the Ledger never saw it.
+void ui_show_policy_reject(const char *reason)
+{
+    if (display_ready() && s_r_title && lvgl_port_lock(0)) {
+        lv_image_set_src(s_r_bg, &bg_notsent);
+        lv_label_set_text(s_r_title, "Refused");
+        lv_obj_set_style_text_font(s_r_detail, &manrope_500_13, LV_PART_MAIN);
+        lv_label_set_text(s_r_detail, reason && reason[0] ? reason : "Outside the policy");
         lvgl_port_unlock();
     }
     go(UI_RESULT);
