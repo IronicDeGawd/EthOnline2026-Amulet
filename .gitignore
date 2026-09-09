@@ -25,3 +25,7 @@ design/pendant/check-*.png
 design/pendant/__pycache__/
 design/pendant/amulet-pendant-screens.html
 firmware/.cache/
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/deployments/31337.json
