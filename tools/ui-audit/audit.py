@@ -48,7 +48,7 @@ ITEMS = [
     ("ADVISORY", "a_amount (split)", "manrope_800_44", 92, None, 240, "CLIP", ["83.2%", "1.07"]),
     ("ADVISORY", "a_label", "manrope_600_17", 72, None, 240, "CLIP", ["Utilization"]),
     ("ADVISORY", "a_unit", "manrope_700_16", 144, None, 240, "CLIP", ["on Aave WETH", "on Compound USDC"]),
-    ("ADVISORY", "a_detail", "manrope_500_13", 168, 40, 160, "DOT2", ["Borrow demand jumped 12.0 pts in 40 blocks; rates now 2.04%. No action needed.", "Nothing to sign"]),
+    ("ADVISORY", "a_detail", "manrope_500_13", 168, 40, 160, "DOT2", ["Up 12.0 pts in 40 blocks; borrow rate 2.04%.", "Borrow demand surged 15.0 pts; rate now 2.04%.", "Nothing to sign"]),
     ("DETAIL", "title", "manrope_700_15", 44, 30, 180, "DOT2", ["Repay 0.0062 ETH on Sim-A", "Add 0.05 ETH collateral on Sim-A"]),
     ("DETAIL", "why", "manrope_500_13", 88, 30, 180, "DOT4", ["Health factor 1.15 is under 1.25; this brings it back toward 1.40.", "X" * 0 + "Health factor 1.07 slipped under 1.40; topping up collateral now restores the 1.40 target safely."]),
     ("DETAIL", "evidence", "manrope_500_11", 160, None, 240, "CLIP", ["QmcXE5..dAd  block 25942525", "manual  block 11670624"]),

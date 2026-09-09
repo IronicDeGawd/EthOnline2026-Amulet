@@ -31,6 +31,8 @@ describe("explainer", () => {
     const adv: Candidate = { ...c, rule: "UTIL_SPIKE", action: "ADVISORY", valueWei: 0n, debtUnits: undefined,
       facts: { market: "Aave WETH", from: "80.0", to: "92.0", delta: "12.0", borrowRate: "2.04", window: 40 } };
     expect(templateFor(adv).human).toBe("Utilization 92.0% on Aave WETH");
+    expect(templateFor(adv).rationale.length).toBeLessThanOrEqual(48);
+    expect(acceptOutput('{"human":"x","rationale":"Borrow demand surged by 12.0 points in 40 blocks; rates now 2.04% and 92.0% used."}', adv)).toBeUndefined();
     const out = acceptOutput('{"human":"Whatever the model says","rationale":"Demand jumped 12.0 pts to 92.0%."}', adv);
     expect(out?.human).toBe("Utilization 92.0% on Aave WETH");
     // a rationale copied from another case (no delta, no level) is refused

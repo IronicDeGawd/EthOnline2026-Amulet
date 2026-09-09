@@ -9,6 +9,7 @@ import type { Evidence } from "../data/graph/freshness.js";
 export interface Explanation { human: string; rationale: string; source: "nova" | "template"; reason?: string }
 
 export const MAX_LINE = 96; // PROP_TEXT_LEN on the pendant, minus the NUL
+export const MAX_ADVISORY_LINE = 48; // two lines of the advisory card, no dots
 
 export function templateFor(c: Candidate): Explanation {
   const f = c.facts;
@@ -27,9 +28,10 @@ export function templateFor(c: Candidate): Explanation {
       };
     case "ADVISORY":
       // "Word number rest": the pendant splits it into label, big figure, unit line.
+      // The card shows two lines of 160 px (about 48 chars); the sheet shows the rest.
       return {
         human: `Utilization ${f.to}% on ${f.market}`,
-        rationale: `Borrow demand jumped ${f.delta} pts in ${f.window} blocks; rates now ${f.borrowRate}%. No action needed.`,
+        rationale: `Up ${f.delta} pts in ${f.window} blocks; borrow rate ${f.borrowRate}%.`,
         source: "template",
       };
     default:
@@ -49,7 +51,7 @@ export function buildPrompt(c: Candidate, ev: Evidence): { system: string; user:
       `Both "${must}" must appear verbatim across the two lines. Never print internal names like REPAY_DEBT or HF_LOW. ` +
       "Reply with JSON only, no code fences: {\"human\": string, \"rationale\": string}. " +
       `human <= 60 chars, one line, starts with "${verb}", then the figure, then the market. ` +
-      "rationale <= 90 chars, one plain sentence saying why now, in fresher words than the example but with the same figures. " +
+      `rationale <= ${c.action === "ADVISORY" ? MAX_ADVISORY_LINE : 90} chars, one plain sentence saying why now, in fresher words than the example but with the same figures. ` +
       `Example for this exact case: ${example}`,
     user:
       `action: ${c.action}\nrule: ${c.rule}\n${facts}\n` +
@@ -79,6 +81,7 @@ export function acceptOutput(text: string, c: Candidate): Explanation | undefine
   const human = c.action === "ADVISORY" ? templateFor(c).human : oneLine(j.human, MAX_LINE);
   if (!HEADLINE.test(human)) return undefined;
   const rationale = oneLine(j.rationale, MAX_LINE);
+  if (c.action === "ADVISORY" && rationale.length > MAX_ADVISORY_LINE) return undefined;
   for (const k of mustKeep(c)) {
     if (!human.includes(k) && !rationale.includes(k)) return undefined;
   }
