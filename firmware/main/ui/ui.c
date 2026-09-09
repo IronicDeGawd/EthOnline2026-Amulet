@@ -34,7 +34,7 @@ static lv_obj_t *s_p_bg, *s_p_plane, *s_p_verb, *s_p_amount, *s_p_unit, *s_p_pil
 static lv_obj_t *s_p_btn, *s_p_arrow, *s_p_hold;                 // confirm row
 static lv_obj_t *s_p_lock, *s_p_lock1, *s_p_lock2;              // locked row
 static lv_obj_t *s_p_arc, *s_p_signing;                         // holding
-static lv_obj_t *s_a_badge, *s_a_i, *s_a_label, *s_a_amount, *s_a_unit, *s_a_detail;  // advisory
+static lv_obj_t *s_a_badge, *s_a_i, *s_a_label, *s_a_amount, *s_a_unit, *s_a_detail, *s_a_hint;  // advisory
 static lv_obj_t *s_p_touch;
 // DETAIL sheet over the proposal: tap the pill to open, tap anywhere to close.
 static lv_obj_t *s_d_sheet, *s_d_title, *s_d_why, *s_d_evidence, *s_d_target, *s_d_back;
@@ -367,6 +367,7 @@ static void build_proposal(void)
     lv_obj_set_size(s_a_detail, 160, 36);
     lv_obj_set_pos(s_a_detail, 40, 168);
     lv_label_set_long_mode(s_a_detail, LV_LABEL_LONG_DOT);
+    s_a_hint = text(s, &manrope_500_11, C_MUTED, 208, "Swipe to dismiss");   // nothing to hold for
 
     // the whole disc listens for the hold and the swipe
     s_hold_prop = (hold_t){ .arc = s_p_arc, .view = holding_view, .armed = proposal_armed, .on_tap = proposal_tap };
@@ -689,7 +690,7 @@ void ui_show_proposal(const amulet_proposal_t *p)
     // tier 1/2
     show(s_p_plane, !advisory); show(s_p_verb, !advisory); show(s_p_amount, !advisory); show(s_p_unit, !advisory); show(s_p_pill, !advisory);
     // tier 0
-    show(s_a_badge, advisory); show(s_a_label, advisory); show(s_a_amount, advisory); show(s_a_unit, advisory); show(s_a_detail, advisory);
+    show(s_a_badge, advisory); show(s_a_label, advisory); show(s_a_amount, advisory); show(s_a_unit, advisory); show(s_a_detail, advisory); show(s_a_hint, advisory);
 
     if (advisory) {
         lv_image_set_src(s_p_bg, &bg_base);
