@@ -181,8 +181,21 @@ static void on_ws_rx(const char *data, size_t len)
 }
 
 // Signs one proposal on the Ledger and broadcasts it. Returns true when it lands.
+static char s_last_txh[67];   // full hash of the last broadcast, for the decision report
+
+// Tells the brain what happened to a proposal. The brain gets a fact, never a signature it
+// could replay: result is one of approved | rejected | policy_reject | expired.
+static void send_decision(const char *id, const char *result, const char *txh)
+{
+    char msg[192];
+    snprintf(msg, sizeof msg, "{\"type\":\"decision\",\"id\":\"%s\",\"result\":\"%s\",\"txHash\":\"%s\"}",
+             id, result, txh ? txh : "");
+    if (!ws_send_text(msg)) ESP_LOGW(TAG, "decision not delivered (no brain link): %s", msg);
+}
+
 static bool execute(const amulet_proposal_t *p, char *out, size_t out_cap)
 {
+    s_last_txh[0] = 0;
     tx1559_t tx = {
         .chain_id = p->chain_id, .nonce = p->nonce, .gas_limit = p->gas,
         .data = p->data_len ? p->data : NULL, .data_len = p->data_len,
@@ -208,6 +221,7 @@ static bool execute(const amulet_proposal_t *p, char *out, size_t out_cap)
         char txh[67], err[128];
         if (rpc_send_raw(raw, rawl, txh, err)) {
             ESP_LOGI(TAG, "BROADCAST OK (yParity=%u) https://sepolia.etherscan.io/tx/%s", parity, txh);
+            snprintf(s_last_txh, sizeof s_last_txh, "%s", txh);
             snprintf(out, out_cap, "%.10s..%.6s", txh, txh + 60);
             return true;
         }
@@ -441,6 +455,7 @@ void app_main(void)
             char detail[64];
             bool ok = execute(&s_pending, detail, sizeof detail);
             ui_show_result(ok, detail);
+            send_decision(s_pending.id, ok ? "approved" : "rejected", ok ? s_last_txh : NULL);
             s_have_pending = false;
             if (ok && rpc_get_nonce(addr, &st.nonce)) ui_set_status(&st);
             vTaskDelay(pdMS_TO_TICKS(6000));
@@ -448,6 +463,7 @@ void app_main(void)
         }
 
         if (ui_state() == UI_PROPOSAL && ui_take_reject()) {
+            send_decision(s_pending.id, "rejected", NULL);
             s_have_pending = false;
             ui_show_home();
         }
