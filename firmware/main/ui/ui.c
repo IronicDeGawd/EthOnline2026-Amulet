@@ -128,14 +128,18 @@ static hold_t s_hold_prop, s_hold_pair, s_hold_ledger;
 static uint32_t s_shown_at, s_press_at;
 static bool s_press_counts, s_hold_view;
 
-static bool proposal_armed(void) { return s_armed; }
+// The hold always runs on a proposal. Armed, it signs; unarmed, it goes and finds the
+// Ledger (pairing it if needed) and comes back here. The wearer never has to leave.
+static bool proposal_armed(void) { return true; }
+static bool never_armed(void) { return false; }   // the pairing code screen: nothing to hold for
 
 static void holding_view(bool on)
 {
     bool paired = s_l_state == UI_PAIR_PAIRED;
-    lv_label_set_text(s_p_lock1, paired ? "Unlock your Ledger" : "Ledger not paired");
-    lv_label_set_text(s_p_lock2, paired ? "Open ETH app" : "Swipe away, pair on Home");
+    lv_label_set_text(s_p_lock1, paired ? "Ledger not answering" : "Ledger not paired");
+    lv_label_set_text(s_p_lock2, paired ? "Unlock it, hold to retry" : "Hold to pair it now");
     lv_image_set_src(s_p_bg, on ? &bg_base : (s_armed ? &bg_proposal : &bg_locked));
+    lv_label_set_text(s_p_signing, s_armed ? "Signing..." : "Finding Ledger...");
     show(s_p_arc, on); show(s_p_signing, on);
     show(s_p_btn, !on && s_armed); show(s_p_arrow, !on && s_armed); show(s_p_hold, !on && s_armed);
     show(s_p_lock, !on && !s_armed); show(s_p_lock1, !on && !s_armed); show(s_p_lock2, !on && !s_armed);
@@ -299,6 +303,10 @@ static void build_proposal(void)
     s_p_pill_text = lv_label_create(s_p_pill);
     lv_obj_set_style_text_font(s_p_pill_text, &manrope_700_13, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_p_pill_text, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    // The brain's rationale can run to 140 chars; the pill shows what fits and dots the rest.
+    lv_obj_set_width(s_p_pill_text, 112);
+    lv_label_set_long_mode(s_p_pill_text, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_p_pill_text, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_center(s_p_pill_text);
 
     // confirm row (armed)
@@ -345,11 +353,12 @@ static void build_pairing(void)
     text(s, &manrope_700_20, C_TEXT, 58, "Same code on");
     text(s, &manrope_700_20, C_TEXT, 82, "your Nano X?");
     s_pr_code = text(s, &manrope_800_36, C_TEXT, 118, "000 000");
-    text(s, &manrope_500_11, C_MUTED, 160, "Swipe away to refuse");
-    hold_row(s, "Hold to pair", &s_pr_btn, &s_pr_arrow, &s_pr_hold);
+    text(s, &manrope_500_11, C_MUTED, 160, "Refuse it there if not");
+    hold_row(s, "Tap your Nano X", &s_pr_btn, &s_pr_arrow, &s_pr_hold);
+    show(s_pr_arrow, false);
     s_pr_arc = rim_arc(s);
     s_pr_pairing = text(s, &manrope_600_15, C_MUTED, 194, "Pairing...");
-    s_hold_pair = (hold_t){ .arc = s_pr_arc, .view = pairing_view };
+    s_hold_pair = (hold_t){ .arc = s_pr_arc, .view = pairing_view, .armed = never_armed };
     touch_layer(s, &s_hold_pair);
     pairing_view(false);
 }
@@ -628,7 +637,7 @@ void ui_show_proposal(const amulet_proposal_t *p)
         lv_label_set_text(s_p_amount, split ? amount : p->human);
         lv_obj_set_style_text_font(s_p_amount, split ? &manrope_800_52 : &manrope_700_22, LV_PART_MAIN);
         lv_label_set_text(s_p_unit,   split ? unit : "");
-        char pill[24]; snprintf(pill, sizeof pill, "%.20s", p->rationale);
+        char pill[96]; snprintf(pill, sizeof pill, "%s", p->rationale);
         lv_label_set_text(s_p_pill_text, pill);
         // A tier-2 proposal needs the Ledger answering before the hold does anything.
         s_armed = (p->tier < 2) || s_status.ledger;

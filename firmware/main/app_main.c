@@ -238,6 +238,19 @@ static bool execute(const amulet_proposal_t *p, char *out, size_t out_cap)
 static volatile bool s_pair_shown;        // the pairing prompt took over the screen
 static bool s_return_to_ledger;           // ...started from the LEDGER screen, go back there
 
+// Reads our address from the Ledger (path 44'/60'/0'/0/0) and its nonce from the chain.
+// Called whenever the Ledger first answers, whichever screen that happens from.
+static void learn_address(char *addr, ui_status_t *st)
+{
+    uint8_t apdu[64], out[128]; size_t n = 0; uint16_t sw = 0; uint8_t pk[65];
+    size_t alen = apdu_eth_get_address(apdu, sizeof apdu, ETH_PATH, 5, false);
+    if (ledger_apdu(apdu, alen, out, sizeof out, &n, &sw, 10000) == 0 && sw == 0x9000 &&
+        apdu_eth_parse_address(out, n, pk, addr) == 0) {
+        ESP_LOGI(TAG, "LEDGER ADDRESS %s", addr);
+        if (rpc_get_nonce(addr, &st->nonce)) ui_set_status(st);
+    }
+}
+
 static bool ledger_link_ensure(uint32_t connect_ms, uint16_t *sw_out)
 {
     if (sw_out) *sw_out = 0;
@@ -247,7 +260,9 @@ static bool ledger_link_ensure(uint32_t connect_ms, uint16_t *sw_out)
             // Pairing ran inside connect and left its own screen up; put the flow's screen back.
             s_pair_shown = false;
             if (ui_state() == UI_BLOCKED) vTaskDelay(pdMS_TO_TICKS(2000));
-            if (s_return_to_ledger) ui_show_ledger(); else ui_show_home();
+            if (s_return_to_ledger) ui_show_ledger();
+            else if (s_have_pending) ui_show_proposal(&s_pending);
+            else ui_show_home();
         }
         if (rc != 0) return false;
     }
@@ -261,21 +276,18 @@ static bool ledger_link_ensure(uint32_t connect_ms, uint16_t *sw_out)
     return rc == 0 && sw == 0x9000;
 }
 
-// First-time pairing. Both sides show the same code; the wearer holds here and presses on
-// the Nano X. Runs on the main task from inside ledger_ble_connect(), so it polls the UI.
+// First-time pairing. The wearer already approved it with a hold (LEDGER screen or a
+// proposal), so the pendant accepts its side of the numeric comparison at once and the code
+// on screen is there to be checked against the Nano X. The Nano X button is the gate: refuse
+// there and the pairing fails. Waiting for a second hold here only raced the Nano X, which
+// drops the request when either side is slow.
 static bool pairing_prompt(uint32_t code)
 {
-    ESP_LOGW(TAG, "PAIRING CODE %06lu - compare with the Nano X", (unsigned long)code);
-    if (!display_ready()) return true;                    // headless bring-up: accept as before
+    ESP_LOGW(TAG, "PAIRING CODE %06lu - confirm on the Nano X", (unsigned long)code);
+    if (!display_ready()) return true;
     s_pair_shown = true;
     ui_show_pairing(code);
-    for (int i = 0; i < 150; i++) {                       // 15 s: the Nano X drops the request if either side is slow
-        if (ui_take_confirm()) { ui_show_ledger_wait("pairing"); return true; }
-        if (ui_take_reject())  { ui_show_blocked("pairing refused"); return false; }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-    ui_show_blocked("pairing timeout");
-    return false;
+    return true;
 }
 
 // Turns a Ledger status word into something worth putting on a 32mm screen.
@@ -402,6 +414,9 @@ void app_main(void)
 
     int tick = 0;
     while (1) {
+#if AMULET_BRAIN_ENABLED
+        ws_tick();
+#endif
         // Re-check readiness periodically. The Ledger auto-locks, and the pendant should say
         // so on HOME rather than discovering it only when you try to sign.
         if (ui_is_resting() && ui_inactive_ms() > AMULET_IDLE_MS) ui_show_idle();
@@ -429,16 +444,7 @@ void app_main(void)
                     bonded = !bonded;
                     ui_set_pairing(bonded ? UI_PAIR_PAIRED : UI_PAIR_NONE, addr, NULL);
                 }
-                if (led && !addr[0]) {
-                    // Unlocked after the boot window: learn the address now.
-                    uint8_t apdu[64], out[128]; size_t n = 0; uint16_t sw = 0; uint8_t pk[65];
-                    size_t alen = apdu_eth_get_address(apdu, sizeof apdu, ETH_PATH, 5, false);
-                    if (ledger_apdu(apdu, alen, out, sizeof out, &n, &sw, 10000) == 0 && sw == 0x9000 &&
-                        apdu_eth_parse_address(out, n, pk, addr) == 0) {
-                        ESP_LOGI(TAG, "LEDGER ADDRESS %s", addr);
-                        if (rpc_get_nonce(addr, &st.nonce)) ui_set_status(&st);
-                    }
-                }
+                if (led && !addr[0]) learn_address(addr, &st);   // unlocked after the boot window
 #if AMULET_FAKE_PROPOSAL
                 if (led && addr[0] && !demo_sent) { demo_sent = true; vTaskDelay(pdMS_TO_TICKS(1500)); inject_fake_proposal(addr); }
 #endif
@@ -450,7 +456,20 @@ void app_main(void)
             ui_show_proposal(&s_pending);
         }
 
-        if (ui_state() == UI_PROPOSAL && ui_take_confirm()) {
+        bool prop_confirm = ui_state() == UI_PROPOSAL && ui_take_confirm();   // taken once
+        if (prop_confirm && !st.ledger) {
+            // Held while the Ledger was not answering: go and find it (pairing runs inside if
+            // there is no bond yet), then the loop below puts the proposal back on screen.
+            uint16_t sw = 0;
+            ui_show_blocked("looking for your Ledger");
+            bool led = ledger_link_ensure(12000, &sw);
+            bonded = ledger_ble_is_bonded();
+            if (led && !addr[0]) learn_address(addr, &st);
+            ui_set_pairing(bonded ? UI_PAIR_PAIRED : UI_PAIR_NONE, addr, led ? NULL : ledger_reason(sw));
+            if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
+            if (!led) { ui_show_blocked(sw ? ledger_reason(sw) : "Ledger not found"); vTaskDelay(pdMS_TO_TICKS(2000)); }
+            ui_show_proposal(&s_pending);
+        } else if (prop_confirm) {
             ui_show_ledger_wait("Confirm on your Nano X");
             char detail[64];
             bool ok = execute(&s_pending, detail, sizeof detail);
@@ -483,6 +502,7 @@ void app_main(void)
                 bool led = ledger_link_ensure(12000, &sw);
                 s_return_to_ledger = false;
                 bonded = ledger_ble_is_bonded();
+                if (led && !addr[0]) learn_address(addr, &st);
                 if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
                 // Not paired: back to this screen with the reason on its detail line.
                 ui_set_pairing(bonded ? UI_PAIR_PAIRED : UI_PAIR_NONE, addr,
