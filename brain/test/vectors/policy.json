@@ -1,0 +1,161 @@
+{
+  "now": 1800000000,
+  "policy": {
+    "amulet.version": "1",
+    "amulet.chain": "11155111",
+    "amulet.allowed": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c:0x047fc9aa,0x402d8883;0xaab73d09E659A0F1898e19fBdD294371044DD524:0x047fc9aa,0x402d8883;0xff79706c842E4421948Ae1e1050EE4594a4240E5:0x414bf389",
+    "amulet.max_value_wei": "50000000000000000",
+    "amulet.max_token_usd": "200",
+    "amulet.tier1_hf": "1.40",
+    "amulet.tier2_hf": "1.25",
+    "amulet.drift_bps": "1500",
+    "amulet.presence_timeout_s": "120",
+    "amulet.yield_delta_bps": "150"
+  },
+  "vectors": [
+    {
+      "name": "repay on simA within cap",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x402d8883",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": true
+    },
+    {
+      "name": "supply on simB",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
+        "value": "0x2386f26fc10000",
+        "data": "0x047fc9aa",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": true
+    },
+    {
+      "name": "exactInputSingle on swapSim",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0xff79706c842E4421948Ae1e1050EE4594a4240E5",
+        "value": "0x2386f26fc10000",
+        "data": "0x414bf389",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": true
+    },
+    {
+      "name": "unknown target",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x000000000000000000000000000000000000dEaD",
+        "value": "0x2386f26fc10000",
+        "data": "0x402d8883",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    },
+    {
+      "name": "withdraw selector not allowed",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x2e1a7d4d",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    },
+    {
+      "name": "setPrice selector not allowed",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x91b7f5ed",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    },
+    {
+      "name": "5 ETH over cap",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x4563918244f40000",
+        "data": "0x402d8883",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    },
+    {
+      "name": "exactly at cap",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0xb1a2bc2ec50000",
+        "data": "0x402d8883",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": true
+    },
+    {
+      "name": "wrong chain",
+      "tx": {
+        "chainId": 1,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x402d8883",
+        "gas": 80000,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    },
+    {
+      "name": "expired",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x402d8883",
+        "gas": 80000,
+        "expiresAt": 1799999999
+      },
+      "expect": false
+    },
+    {
+      "name": "gas too low",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x402d8883",
+        "gas": 20999,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    },
+    {
+      "name": "gas too high",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x402d8883",
+        "gas": 10000001,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    }
+  ]
+}

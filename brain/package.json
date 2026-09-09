@@ -1,0 +1,28 @@
+{
+  "name": "amulet-brain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The agent behind the Amulet pendant: watches The Graph, reads the guarded position, proposes; never holds a key that can move funds.",
+  "bin": { "amulet": "./src/cli/index.ts" },
+  "scripts": {
+    "amulet": "tsx src/cli/index.ts",
+    "run": "tsx src/cli/index.ts run",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.940.0",
+    "commander": "^14.0.2",
+    "ulid": "^3.0.2",
+    "viem": "^2.44.4",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.10"
+  }
+}
