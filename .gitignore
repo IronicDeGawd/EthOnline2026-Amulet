@@ -17,3 +17,11 @@ tools/fake-ledger/fake.log
 .playwright-mcp/
 *.png
 web/assembly.svg.part
+firmware/assets/src/
+firmware/assets/contact.png
+design/pendant/.venv/
+design/pendant/preview.html
+design/pendant/check-*.png
+design/pendant/__pycache__/
+design/pendant/amulet-pendant-screens.html
+firmware/.cache/

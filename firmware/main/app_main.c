@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
+#include "esp_sntp.h"
+#include <time.h>
 #include "display.h"
 #include "ui.h"
 #include "proposal.h"
@@ -267,7 +269,7 @@ static void inject_fake_proposal(const char *self_addr)
     snprintf(json, sizeof json,
         "{\"type\":\"proposal\",\"id\":\"demo-1\",\"tier\":2,"
         "\"action\":\"REPAY_DEBT\",\"human\":\"Repay 120 USDC\","
-        "\"rationale\":\"health factor 1.08\","
+        "\"rationale\":\"Health factor 1.08\","
         "\"tx\":{\"chainId\":%llu,\"to\":\"%s\",\"value\":\"0x5af3107a4000\","
         "\"nonce\":%llu,\"maxFeePerGas\":\"%s\","
         "\"maxPriorityFeePerGas\":\"%s\",\"gas\":21000},"
@@ -301,6 +303,10 @@ void app_main(void)
         return;
     }
     st.wifi = true; ui_set_status(&st);
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+    setenv("TZ", AMULET_TZ, 1); tzset();
 
     rpc_init(AMULET_RPC_URL);
     ledger_ble_init();
@@ -343,12 +349,9 @@ void app_main(void)
 #endif
 
 #if AMULET_FAKE_PROPOSAL
-    if (addr[0]) {
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        inject_fake_proposal(addr);
-    } else {
-        ESP_LOGW(TAG, "no Ledger address — skipping the fake proposal");
-    }
+    // Fired from the idle loop the first time the Ledger is ready, rather than once at boot,
+    // so unlocking late still gets the rehearsal.
+    bool demo_sent = false;
 #endif
 
     int tick = 0;
@@ -356,12 +359,31 @@ void app_main(void)
         // Re-check readiness periodically. The Ledger auto-locks, and the pendant should say
         // so on HOME rather than discovering it only when you try to sign.
         if (ui_state() == UI_HOME) {
+            time_t now = time(NULL); struct tm tmv; localtime_r(&now, &tmv);
+            if (tmv.tm_year > 100) {            // SNTP has answered
+                char d[16], t[8];
+                strftime(d, sizeof d, "%a %e", &tmv); strftime(t, sizeof t, "%H:%M", &tmv);
+                ui_set_clock(d, t);
+            }
             bool brain = AMULET_BRAIN_ENABLED ? ws_is_connected() : true;
             if (brain != st.brain) { st.brain = brain; ui_set_status(&st); }
             // Cheap on the wire but not free, so only every few seconds.
             if (++tick % 6 == 0) {
                 bool led = ledger_link_ensure(4000, NULL);
                 if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
+                if (led && !addr[0]) {
+                    // Unlocked after the boot window: learn the address now.
+                    uint8_t apdu[64], out[128]; size_t n = 0; uint16_t sw = 0; uint8_t pk[65];
+                    size_t alen = apdu_eth_get_address(apdu, sizeof apdu, ETH_PATH, 5, false);
+                    if (ledger_apdu(apdu, alen, out, sizeof out, &n, &sw, 10000) == 0 && sw == 0x9000 &&
+                        apdu_eth_parse_address(out, n, pk, addr) == 0) {
+                        ESP_LOGI(TAG, "LEDGER ADDRESS %s", addr);
+                        if (rpc_get_nonce(addr, &st.nonce)) ui_set_status(&st);
+                    }
+                }
+#if AMULET_FAKE_PROPOSAL
+                if (led && addr[0] && !demo_sent) { demo_sent = true; vTaskDelay(pdMS_TO_TICKS(1500)); inject_fake_proposal(addr); }
+#endif
             }
         }
 

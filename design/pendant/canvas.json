@@ -1,0 +1,128 @@
+{
+  "artboards": [
+    {
+      "file": "Home.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 330,
+      "y": 0,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "ProposalHolding.dc.html",
+      "x": 660,
+      "y": 0,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "ProposalBlocked.dc.html",
+      "x": 990,
+      "y": 0,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "ProposalAdvisory.dc.html",
+      "x": 0,
+      "y": 380,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "LedgerWait.dc.html",
+      "x": 330,
+      "y": 380,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "Sent.dc.html",
+      "x": 660,
+      "y": 380,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "NotSent.dc.html",
+      "x": 990,
+      "y": 380,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "Blocked.dc.html",
+      "x": 0,
+      "y": 760,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "Receive.dc.html",
+      "x": 330,
+      "y": 760,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "QuickActions.dc.html",
+      "x": 660,
+      "y": 760,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "WallpaperAurora.dc.html",
+      "x": 0,
+      "y": 1140,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "WallpaperHorizon.dc.html",
+      "x": 330,
+      "y": 1140,
+      "w": 240,
+      "h": 240
+    },
+    {
+      "file": "WallpaperNebula.dc.html",
+      "x": 660,
+      "y": 1140,
+      "w": 240,
+      "h": 240
+    }
+  ],
+  "annotations": [
+    {
+      "id": "source",
+      "x": -380,
+      "y": 0,
+      "w": 330,
+      "text": "BUILT FROM THE REFERENCE\n\ncontext/design/pendant-screens-ref.png is the source of truth. Every screen here is that layout at true size, 240 x 240, over artwork rendered for the panel.\n\nBackgrounds are seven small bitmaps: a base plate, three tints (sent, not sent, blocked) and three wallpapers. Icons are stroke SVG on a 24px grid. Type is Manrope, with IBM Plex Mono for the hash."
+    },
+    {
+      "id": "firmware",
+      "x": -380,
+      "y": 330,
+      "w": 330,
+      "text": "WHAT THE FIRMWARE NEEDS\n\nBitmaps: 7 x 112 KB RGB565 via LVGLImage.py.\nFonts: Manrope 800 at 66 and 54, 700 at 22-26, 600 at 17-20, 500 at 12-15; Plex Mono 500 at 15. Add U+2248 (the approx sign) to the glyph range; everything else is ASCII.\nProgress arc, spinner and pills are native LVGL objects.\nThe lit segment on Main is a pre-rendered layer.\n\nTwo screens are new to the firmware: Receive uses the GET PUBLIC KEY display flag the transport already has; Quick actions needs a menu and a recent list."
+    },
+    {
+      "id": "reactor",
+      "x": -380,
+      "y": 760,
+      "w": 330,
+      "text": "NEXT: ARC REACTOR FACE\n\nAn animated reactor ring as the screensaver, read as a GIF from the SD card (free now the motor is gone; LVGL decodes GIF natively from FAT). Drawn as an original glowing core, not the film prop.\n\nPlanned in context/plan/pendant-ui.md after these screens."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

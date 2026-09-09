@@ -74,11 +74,17 @@ static int16_t  s_last_x, s_last_y;
 static void chsc6x_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     (void)indev;
+    uint32_t now = lv_tick_get();
+    // Only talk to the chip when it has something to say: INT pulses low on each report, and
+    // we keep reading for the latch window after one. While idle the CHSC6X sleeps and NACKs
+    // every read, which otherwise floods the log 30 times a second.
+    bool worth_reading = gpio_get_level(AMULET_PIN_TP_INT) == 0 ||
+                         (s_last_valid_ms && (now - s_last_valid_ms) < HOLD_LATCH_MS * 3);
     uint8_t buf[CHSC6X_READ_LEN] = {0};
-    bool valid = (i2c_master_receive(s_touch, buf, sizeof buf, 50) == ESP_OK) &&
+    bool valid = worth_reading &&
+                 (i2c_master_receive(s_touch, buf, sizeof buf, 50) == ESP_OK) &&
                  buf[0] == 0x01 && buf[2] < LCD_H_RES && buf[4] < LCD_V_RES;
 
-    uint32_t now = lv_tick_get();
     if (valid) {
         s_last_x = buf[2];
         s_last_y = buf[4];
