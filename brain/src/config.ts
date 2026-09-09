@@ -82,6 +82,56 @@ export const DEFAULT_POLICY = {
 };
 export type Policy = typeof DEFAULT_POLICY;
 
+// ENSv2 Sepolia beta (contracts-v2 @ 97a5729). The policy lives as text records on
+// guardian.<parent>.eth; the brain reads through the Universal Resolver, the pendant reads
+// the resolver proxy directly. Per-name addresses land in contracts/deployments/ens-<chain>.json.
+export const ENS = {
+  chainId: SEPOLIA_CHAIN_ID,
+  parentLabel: "amuletguard",
+  childLabel: "guardian",
+  rootRegistry: "0x8115186e8f2e0b0281e86ab91f0f48ba90364354",
+  ethRegistry: "0xbdc85dd5b15d7ecb354cd7cb6f2c50b4f2c4f0e2",
+  ethRegistrar: "0xa88553f454b77203b0d036a05c894d555eaaa2cc",
+  factory: "0x10dc6333cdfe1fcef624c6e0a8221b91804cd7ef",
+  resolverImpl: "0x9eae5c2730a7dd16bdd1dee6421a1b91e3b0365e",
+  userRegistryImpl: "0x624a25d67b59d587752ebec8dded8827dae52050",
+  universalResolver: "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe",
+  mockUsdc: "0x768f42455a2d082e23ceef7d51e5787c82d67a39",
+  commit: "97a57293f3b4279d94b571e678edb53ce62638f4",
+} as const;
+export const POLICY_NAME = `${ENS.childLabel}.${ENS.parentLabel}.eth`;
+export const POLICY_KEYS = [
+  "amulet.version", "amulet.chain", "amulet.allowed", "amulet.max_value_wei", "amulet.max_token_usd",
+  "amulet.tier1_hf", "amulet.tier2_hf", "amulet.drift_bps", "amulet.presence_timeout_s", "amulet.yield_delta_bps",
+] as const;
+export const STATUS_KEYS = ["amulet.status", "amulet.last-action"] as const;
+
+export interface EnsDeployment {
+  chainId: number;
+  name: string;
+  node: `0x${string}`;
+  parent: string;
+  resolver: `0x${string}`;
+  subregistry: `0x${string}` | null;
+  ledger: `0x${string}`;
+  brain: `0x${string}`;
+  deployer: `0x${string}`;
+  expiry: number;
+  commit: string;
+}
+
+export function loadEnsDeployment(chainId = SEPOLIA_CHAIN_ID): EnsDeployment {
+  const p = resolve(REPO_ROOT, "contracts", "deployments", `ens-${chainId}.json`);
+  return JSON.parse(readFileSync(p, "utf8")) as EnsDeployment;
+}
+
+export const POLICY_REFRESH_TICKS = 10;
+
+// Mainnet read-only view: the user's real position, resolved from their ENS name. Shown,
+// never acted on.
+export const MAINNET_VIEW_NAME = "ironyaditya.eth";
+export const AAVE_V3_POOL_MAINNET = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2" as const;
+
 export const TICK_MS = 12_000;
 export const PROPOSAL_TTL_S = 600;
 export const LLM_TIMEOUT_MS = 4000;

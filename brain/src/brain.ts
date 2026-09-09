@@ -3,8 +3,10 @@
 // the wrist, record the outcome on AmuletLog. Holds no key that can move funds.
 import type { PublicClient } from "viem";
 import {
-  LEDGER_ADDRESS, PROPOSAL_TTL_S, SUBGRAPHS, TICK_MS, type Deployments, type Policy,
+  LEDGER_ADDRESS, POLICY_REFRESH_TICKS, PROPOSAL_TTL_S, SUBGRAPHS, TICK_MS, type Deployments, type Policy,
 } from "./config.js";
+import { policyDiff, type PolicyRead } from "./ens/resolver.js";
+import type { BrainStatus, StatusWriter } from "./ens/status.js";
 import { GraphClient } from "./data/graph/client.js";
 import { checkFreshness, type Evidence } from "./data/graph/freshness.js";
 import { fetchLending, pickMarket, type MarketSnapshot } from "./data/graph/lending.js";
@@ -34,6 +36,9 @@ export interface BrainDeps {
   policy: Policy;
   pendant: PendantLink;
   recorder?: Recorder;
+  policySource?: () => Promise<PolicyRead>; // ENS; re-read every POLICY_REFRESH_TICKS
+  status?: StatusWriter; // amulet.status / amulet.last-action on ENS
+  mainnetView?: () => Promise<string>; // read-only line about the user's real position
   log: (line: string) => void;
   simulate?: Simulation;
   once?: boolean; // stop after the first decision
@@ -47,6 +52,32 @@ export class Brain {
   private pending?: Proposal;
   private lastRuleAt = new Map<string, number>();
   private stopped = false;
+  private ticks = 0;
+
+  // Pendant and ENS hear the same word.
+  private setState(s: BrainStatus): void {
+    this.d.pendant.setState(s);
+    void this.d.status?.setStatus(s);
+  }
+
+  // Policy comes from ENS; a change there shows up here within a couple of minutes and is
+  // logged field by field. A failed read keeps the last good policy and says so.
+  private async refreshPolicy(): Promise<void> {
+    const { d } = this;
+    if (!d.policySource) return;
+    try {
+      const read = await d.policySource();
+      const diff = policyDiff(d.policy, read.policy);
+      if (diff.length) {
+        d.log(`policy from ${read.name} changed: ${diff.join("; ")}`);
+        d.policy = read.policy;
+      } else if (this.ticks === 0) {
+        d.log(`policy from ${read.name}: v${read.policy.version} chain ${read.policy.chain}, ${read.policy.allowed.length} targets, cap ${Number(read.policy.max_value_wei) / 1e18} ETH, tiers ${read.policy.tier1_hf}/${read.policy.tier2_hf}`);
+      }
+    } catch (e) {
+      d.log(`policy read failed, keeping the last one: ${(e as Error).message.split("\n")[0]}`);
+    }
+  }
 
   constructor(private readonly d: BrainDeps) {
     d.pendant.on("presence", (p) => {
@@ -80,15 +111,24 @@ export class Brain {
     const { d } = this;
     if (this.pending) return false;
 
+    // 0. Policy and the read-only mainnet view, every few ticks.
+    if (this.ticks % POLICY_REFRESH_TICKS === 0) {
+      await this.refreshPolicy();
+      if (d.mainnetView) {
+        try { d.log(await d.mainnetView()); } catch (e) { d.log(`mainnet view: ${(e as Error).message.split("\n")[0]}`); }
+      }
+    }
+    this.ticks++;
+
     // 1. Evidence, gated.
     const [head, lending] = await Promise.all([headBlock(d.mainnet), fetchLending(d.graph, "aaveV3")]);
     const fresh = checkFreshness("aaveV3", lending.meta, head, lending.queriedAt, undefined, d.simulate?.pinDeployment);
     if (!fresh.ok) {
-      d.pendant.setState("stale");
+      this.setState("stale");
       d.log(`STALE ${fresh.reason}: ${fresh.detail} — standing down`);
       return false;
     }
-    d.pendant.setState("watching");
+    this.setState("watching");
     const weth = pickMarket(lending.markets, "WETH");
     if (weth) this.utilHistory.push({ block: fresh.evidence.block, snap: weth });
     if (this.utilHistory.length > 400) this.utilHistory.shift();
@@ -145,12 +185,12 @@ export class Brain {
     const text = await d.explainer.explain(c, evidence);
     const p = assemble(c.action, tier, text, tx, evidence);
     this.pending = p;
-    d.pendant.setState("proposing");
+    this.setState("proposing");
     d.log(`PROPOSE ${p.id} tier ${tier} ${c.rule} → ${c.action}: "${p.human}" / "${p.rationale}" [${text.source}${text.reason ? `; ${text.reason}` : ""}]`);
     if (!d.pendant.push(p)) {
       d.log("pendant not connected; proposal dropped");
       this.pending = undefined;
-      d.pendant.setState("watching");
+      this.setState("watching");
       return false;
     }
 
@@ -168,13 +208,14 @@ export class Brain {
       } catch { /* keep expired */ }
     }
     this.pending = undefined;
-    d.pendant.setState("watching");
+    this.setState("watching");
     d.log(`DECISION ${p.id}: ${decision.result}${decision.txHash ? ` tx ${decision.txHash}` : ""}`);
     await this.record(p, c, decision);
     if (decision.result === "approved" && decision.txHash) {
       try {
         const rcpt = await d.sepolia.waitForTransactionReceipt({ hash: decision.txHash as `0x${string}`, timeout: 120_000 });
         d.log(`mined in block ${rcpt.blockNumber} status ${rcpt.status} https://sepolia.etherscan.io/tx/${decision.txHash}`);
+        void d.status?.setLastAction(decision.txHash, rcpt.blockNumber);
       } catch (e) {
         d.log(`receipt not seen yet: ${(e as Error).message.split("\n")[0]}`);
       }

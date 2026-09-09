@@ -1,0 +1,13 @@
+{
+  "chainId": 11155111,
+  "name": "guardian.amuletguard.eth",
+  "node": "0x1f9578939cb00944851bfcfea23ded5df724016b023e12e05572f771fccf8576",
+  "parent": "amuletguard.eth",
+  "resolver": "0xaFc05130255CaFb6cB181DBF1e81265EE5a6FB19",
+  "subregistry": "0x3c9ac7900F6E23693fC620e00F892bf66b29CDFa",
+  "ledger": "0x211828006b402e0aae8244fB95B362b9eFFf7736",
+  "brain": "0x635DaC6c98435579f90567Dfc510B646Ef1753CA",
+  "deployer": "0xfc7eaCE449aaDaD77D1063B03a24a703aF957aD2",
+  "expiry": 1791588386,
+  "commit": "97a57293f3b4279d94b571e678edb53ce62638f4"
+}
