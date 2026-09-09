@@ -81,6 +81,11 @@ expand or drop that sentence.
 
 ## Additional comments
 
-Found while writing an ESP32 firmware that talks to a Nano X over BLE and relays
-agent-proposed transactions for on-device confirmation, built for ETHOnline 2026. Happy to
-adjust wording, table shape, or heading level to match the maintainers' preference.
+Found while building **Amulet** for ETHOnline 2026: an ESP32-S3 pendant that talks to a
+Nano X over BLE and is the only path by which an AI agent's proposed transactions can reach
+the device for on-device confirmation. The transport and the transaction encoders are in C,
+which is how we ended up needing the `v` byte's exact semantics rather than inheriting them
+from `hw-app-eth`. Source: https://github.com/IronicDeGawd/EthOnline2026-Amulet
+
+Happy to adjust wording, table shape, or heading level to match the maintainers'
+preference.

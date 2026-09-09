@@ -28,3 +28,8 @@ CONFIG_WS_TRANSPORT=y
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=20480
 CONFIG_ESP_TIMER_TASK_STACK_SIZE=4096
 CONFIG_FREERTOS_HZ=1000
+
+# Larger fonts: the round panel's active area is only ~32.5mm, so LVGL's 14px default is
+# unreadable at arm's length. 20 for body, 28 for headings.
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_28=y

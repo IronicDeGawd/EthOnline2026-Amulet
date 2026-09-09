@@ -8,6 +8,8 @@ firmware/main/secrets.h
 firmware/build/
 firmware/managed_components/
 firmware/sdkconfig
+tools/motor-test/sdkconfig
+tools/motor-test/build/
 firmware/dependencies.lock
 tools/fake-ledger/.venv/
 tools/fake-ledger/fake.log
