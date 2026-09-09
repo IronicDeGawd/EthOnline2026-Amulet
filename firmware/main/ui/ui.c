@@ -27,6 +27,7 @@ static lv_obj_t *s_scr[7];
 
 // HOME
 static lv_obj_t *s_home_line1, *s_home_line2, *s_home_date, *s_home_time;
+static lv_obj_t *s_bat_body, *s_bat_fill, *s_bat_tip, *s_bat_text;
 // PROPOSAL (tier 1/2) and ADVISORY (tier 0) share one screen; the objects for the mode not in
 // use are hidden. The band under the type is part of the background image.
 static lv_obj_t *s_p_bg, *s_p_plane, *s_p_verb, *s_p_amount, *s_p_unit, *s_p_pill, *s_p_pill_text;
@@ -150,6 +151,35 @@ static void build_home(void)
     s_home_line2 = text(s, &manrope_500_13, C_MUTED, 122, "Ready for proposals");
     s_home_date  = text(s, &manrope_600_15, C_MUTED, 150, "");
     s_home_time  = text(s, &manrope_800_36, C_TEXT,  166, "");
+
+    // Battery: a small outline glyph with a fill, and the percentage beside it, low on the disc.
+    s_bat_body = lv_obj_create(s);
+    lv_obj_remove_style_all(s_bat_body);
+    lv_obj_set_size(s_bat_body, 20, 10);
+    lv_obj_set_pos(s_bat_body, 92, 210);
+    lv_obj_set_style_radius(s_bat_body, 2, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_bat_body, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(s_bat_body, lv_color_hex(C_MUTED), LV_PART_MAIN);
+    lv_obj_set_style_border_opa(s_bat_body, LV_OPA_COVER, LV_PART_MAIN);
+    s_bat_tip = lv_obj_create(s);
+    lv_obj_remove_style_all(s_bat_tip);
+    lv_obj_set_size(s_bat_tip, 2, 4);
+    lv_obj_set_pos(s_bat_tip, 112, 213);
+    lv_obj_set_style_bg_color(s_bat_tip, lv_color_hex(C_MUTED), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_bat_tip, LV_OPA_COVER, LV_PART_MAIN);
+    s_bat_fill = lv_obj_create(s_bat_body);
+    lv_obj_remove_style_all(s_bat_fill);
+    lv_obj_set_size(s_bat_fill, 0, 6);
+    lv_obj_set_pos(s_bat_fill, 2, 2);
+    lv_obj_set_style_radius(s_bat_fill, 1, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_bat_fill, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_bat_fill, LV_OPA_COVER, LV_PART_MAIN);
+    s_bat_text = lv_label_create(s);
+    lv_obj_set_style_text_font(s_bat_text, &manrope_500_13, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_bat_text, lv_color_hex(C_MUTED), LV_PART_MAIN);
+    lv_label_set_text(s_bat_text, "");
+    lv_obj_set_pos(s_bat_text, 118, 206);
+    show(s_bat_body, false); show(s_bat_tip, false); show(s_bat_text, false);
 }
 
 static void build_proposal(void)
@@ -395,6 +425,21 @@ void ui_set_clock(const char *date, const char *time)
     if (!lvgl_port_lock(0)) return;
     lv_label_set_text(s_home_date, date ? date : "");
     lv_label_set_text(s_home_time, time ? time : "");
+    lvgl_port_unlock();
+}
+
+void ui_set_battery(int percent)
+{
+    if (!display_ready() || !s_bat_body) return;
+    if (!lvgl_port_lock(0)) return;
+    bool on = percent >= 0;
+    show(s_bat_body, on); show(s_bat_tip, on); show(s_bat_text, on);
+    if (on) {
+        if (percent > 100) percent = 100;
+        lv_obj_set_width(s_bat_fill, (14 * percent) / 100);
+        lv_obj_set_style_bg_color(s_bat_fill, lv_color_hex(percent <= 15 ? 0xef4444 : C_TEXT), LV_PART_MAIN);
+        lv_label_set_text_fmt(s_bat_text, "%d%%", percent);
+    }
     lvgl_port_unlock();
 }
 

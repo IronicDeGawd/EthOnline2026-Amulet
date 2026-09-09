@@ -7,6 +7,7 @@
 #include <time.h>
 #include "display.h"
 #include "ui.h"
+#include "battery.h"
 #include "proposal.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -292,6 +293,7 @@ void app_main(void)
     esp_err_t derr = display_init();
     if (derr != ESP_OK) ESP_LOGW(TAG, "display init failed (%s) — running headless", esp_err_to_name(derr));
     ui_init();
+    battery_init();
 
     ui_status_t st = {0};
     ui_set_status(&st);
@@ -359,6 +361,10 @@ void app_main(void)
         // so on HOME rather than discovering it only when you try to sign.
         if (ui_is_resting() && ui_inactive_ms() > AMULET_IDLE_MS) ui_show_idle();
 
+        if (tick % 20 == 1) {                            // every ~10 s
+            int mv = battery_mv();
+            if (mv > 0) { ui_set_battery(battery_percent(mv)); if (tick % 120 == 1) ESP_LOGI(TAG, "battery %d mV", mv); }
+        }
         if (ui_is_resting() || ui_state() == UI_IDLE) {
             time_t now = time(NULL); struct tm tmv; localtime_r(&now, &tmv);
             if (tmv.tm_year > 100) {            // SNTP has answered

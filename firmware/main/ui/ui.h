@@ -25,7 +25,8 @@ typedef struct {
 
 void ui_init(void);                       // builds the screens; call after display_init()
 void ui_set_status(const ui_status_t *s); // refreshes the readiness row wherever it shows
-void ui_set_clock(const char *date, const char *time); // "Tue 16", "10:24" on HOME; NULL hides
+void ui_set_clock(const char *date, const char *time);
+void ui_set_battery(int percent);                  // small glyph on HOME; <0 hides it // "Tue 16", "10:24" on HOME; NULL hides
 void ui_show_home(void);
 void ui_show_proposal(const amulet_proposal_t *p);
 void ui_show_ledger_wait(const char *what);   // e.g. "Confirm on your Nano X"
