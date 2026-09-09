@@ -1,0 +1,14 @@
+# Amulet — 8MB flash on the XIAO ESP32-S3.
+#
+# The stock partitions_singleapp_large.csv gives the app only 0x177000 (1.53 MB) because it is
+# sized for a 2 MB chip. This board has 8 MB, so the app gets 4 MB and the rest becomes storage.
+#
+# nvs and phy_init keep their stock offsets and sizes ON PURPOSE: NVS holds the Ledger BLE
+# pairing bond and the cached ENS policy. Moving or resizing it would wipe both and force
+# re-pairing with the Nano X. Only the app partition grows, and storage is appended after it.
+#
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x5000,
+phy_init,   data, phy,     0xe000,   0x1000,
+factory,    app,  factory, 0x10000,  0x400000,
+storage,    data, spiffs,  0x410000, 0x3f0000,

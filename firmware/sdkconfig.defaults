@@ -1,6 +1,10 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# 8MB flash: the stock singleapp_large table is sized for a 2MB chip and its 0x177000 app
+# partition overflows once LVGL is linked. See firmware/partitions.csv — nvs keeps its stock
+# offset so the Ledger pairing bond survives the change.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y

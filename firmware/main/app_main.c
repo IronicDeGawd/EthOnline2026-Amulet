@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
+#include "display.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -158,6 +159,11 @@ void app_main(void)
     ESP_ERROR_CHECK(r);
     ESP_LOGI(TAG, "amulet day-2 build, free heap %lu", (unsigned long)esp_get_free_heap_size());
     keccak_selftest();
+
+    // Display is optional: if the board is absent or a pin is wrong, the signing flow still runs
+    // headless over serial. Never let a screen fault take out the transaction path.
+    esp_err_t derr = display_init();
+    if (derr != ESP_OK) ESP_LOGW(TAG, "display init failed (%s) — running headless", esp_err_to_name(derr));
 
     if (!wifi_connect(AMULET_WIFI_SSID, AMULET_WIFI_PASS)) { ESP_LOGE(TAG, "wifi failed"); return; }
     rpc_init(AMULET_RPC_URL);
