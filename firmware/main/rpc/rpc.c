@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "esp_crt_bundle.h"
 #include "cJSON.h"
 #include "tx.h"
@@ -24,9 +25,18 @@ static cJSON *call_json(const char *method, const char *params_json, char *err_o
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     esp_http_client_set_header(c, "Content-Type", "application/json");
     char *resp = NULL;
-    if (esp_http_client_open(c, n) != ESP_OK) { ESP_LOGE(TAG, "open failed"); goto out; }
+    int status = 0;
+    // Every failure names itself: a blank reason on a 32 mm screen cannot be debugged.
+    esp_err_t oe = esp_http_client_open(c, n);
+    if (oe != ESP_OK) {
+        ESP_LOGE(TAG, "%s: open failed: %s (free heap %u, internal %u)", method, esp_err_to_name(oe),
+                 (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+        if (err_out) snprintf(err_out, err_cap, "no route to RPC (%s)", esp_err_to_name(oe));
+        goto out;
+    }
     esp_http_client_write(c, body, n);
     int cl = esp_http_client_fetch_headers(c);
+    status = esp_http_client_get_status_code(c);
     int cap = (cl > 0 && cl < 65536) ? cl + 1 : 16384;
     resp = malloc(cap);
     int total = 0, r;
@@ -37,8 +47,14 @@ out:
     esp_http_client_cleanup(c);
     free(body);
     if (!resp) return NULL;
-    cJSON *j = cJSON_Parse(resp); free(resp);
-    if (!j) return NULL;
+    cJSON *j = cJSON_Parse(resp);
+    if (!j) {
+        ESP_LOGE(TAG, "%s: HTTP %d, not JSON: %.120s", method, status, resp);
+        if (err_out) snprintf(err_out, err_cap, "RPC answered HTTP %d", status);
+        free(resp);
+        return NULL;
+    }
+    free(resp);
     cJSON *ret = NULL;
     cJSON *e = cJSON_GetObjectItem(j, "error");
     if (e) {

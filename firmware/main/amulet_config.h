@@ -5,9 +5,9 @@
 #define AMULET_RPC_URL      "https://ethereum-sepolia-rpc.publicnode.com"
 #define AMULET_TEST_VALUE_WEI 100000000000000ULL                          // 0.0001 ETH
 #define AMULET_TX_TYPE      2   // 2 = EIP-1559 (type 2), 0 = legacy (EIP-155)
-#define AMULET_BRAIN_ENABLED 0   // 0 until the agent exists; avoids reconnect spam at the
+#define AMULET_BRAIN_ENABLED 1   // 0 until the agent exists; avoids reconnect spam at the
                                  // day-0 placeholder endpoint. Set 1 with a ws:// LAN URL.
-#define AMULET_FAKE_PROPOSAL 1   // 1 = inject a local proposal at boot so the UI and
+#define AMULET_FAKE_PROPOSAL 0   // 1 = inject a local proposal at boot so the UI and
                                  // signing flow can be rehearsed before the brain exists
 #define AMULET_TEST_WITH_CALLDATA 0   // 1 = send a fake contract call (needs Blind signing on the Nano X)
 

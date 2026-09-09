@@ -33,3 +33,7 @@ CONFIG_FREERTOS_HZ=1000
 # unreadable at arm's length. 20 for body, 28 for headings.
 CONFIG_LV_FONT_MONTSERRAT_20=y
 CONFIG_LV_FONT_MONTSERRAT_28=y
+
+# TLS sessions for the RPC and the brain link allocate ~40 KB each; internal RAM is full with
+# WiFi + BLE + LVGL, so mbedtls takes its buffers from PSRAM.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y

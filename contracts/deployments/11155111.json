@@ -1,0 +1,22 @@
+{
+  "amuletLog": "0xA6fA7D6F47c8aDCe20396E526E5a586bF4099Ab3",
+  "block": 11669363,
+  "chainId": 11155111,
+  "deployer": "0xfc7eaCE449aaDaD77D1063B03a24a703aF957aD2",
+  "initialPrice": 200000000000,
+  "liquidationThresholdBps": 8000,
+  "sUSDC": "0xA13262C39A790dFb2B54e1FE4137C01CFB5e5Ea8",
+  "selectors": {
+    "borrow": "0xc5ebeaec",
+    "exactInputSingle": "0x414bf389",
+    "record": "0xee5e2b69",
+    "repay": "0x402d8883",
+    "setPrice": "0x91b7f5ed",
+    "supply": "0x047fc9aa",
+    "withdraw": "0x2e1a7d4d"
+  },
+  "simA": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+  "simB": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
+  "swapSim": "0xff79706c842E4421948Ae1e1050EE4594a4240E5",
+  "weth9Sentinel": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14"
+}
