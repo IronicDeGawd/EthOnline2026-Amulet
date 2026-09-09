@@ -168,10 +168,15 @@ static volatile bool s_have_pending;
 static policy_t s_policy;
 static volatile bool s_policy_reject;
 static char s_policy_reason[POLICY_REASON_LEN];
+static volatile bool s_policy_refresh_now;   // the brain saw the ENS records change
 static void on_ws_rx(const char *data, size_t len)
 {
     char err[64];
     amulet_proposal_t p;
+    if (len < 64) {   // tiny control message; the frame is not NUL-terminated
+        char head[64]; memcpy(head, data, len); head[len] = 0;
+        if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
+    }
     if (!proposal_parse(data, len, &p, err, sizeof err)) {
         ESP_LOGW(TAG, "ignored message: %s", err);
         return;
@@ -480,11 +485,14 @@ void app_main(void)
             }
         }
 
-        // Hourly policy refresh while awake; a failed read retries in five minutes.
-        if (ui_is_resting() || ui_state() == UI_IDLE) {
+        // Hourly policy refresh (or when the brain says so); a failed read retries in five
+        // minutes. Not while the Ledger is mid-signature or pairing: that path owns the radio.
+        if (ui_state() != UI_LEDGER_WAIT && ui_state() != UI_PAIRING) {
             time_t now = time(NULL);
             int64_t since_ok = s_policy.fetched_at ? (int64_t)now - s_policy.fetched_at : INT64_MAX;
-            if (since_ok > AMULET_POLICY_REFRESH_S && now - policy_tried > 300) {
+            if (s_policy_refresh_now || (since_ok > AMULET_POLICY_REFRESH_S && now - policy_tried > 300)) {
+                if (s_policy_refresh_now) ESP_LOGI(TAG, "brain says the policy changed; re-reading");
+                s_policy_refresh_now = false;
                 policy_tried = now;
                 bool stale;
                 policy_refresh(&stale);

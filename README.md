@@ -55,6 +55,25 @@ Amulet makes the human-in-the-loop a **physical object with one job**. Roughly 1
 | **The Graph** | Messari standardized lending subgraphs supply live market conditions; Substreams is the agent's clock (one tick per block); a custom subgraph on Subgraph Studio indexes the agent's own actions. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | `brain/src/data/graph/`, `subgraph/` |
 | **ENS** | The agent lives at `guardian.<you>.eth` on ENSv2 Sepolia. Its policy (allowed contracts, max value, thresholds) is text records on a permissioned resolver. Enhanced Access Control gives the Ledger the policy-admin role and the brain a status-only role. The brain cannot raise its own limits. Revoking the subname is the kill switch. | `firmware/main/ens/`, `brain/src/ens/` |
 
+## The policy on ENS
+
+Amulet targets the **ENSv2 Sepolia beta** that the ENS docs pin (`ensdomains/contracts-v2` @ `97a5729`). The name is `guardian.amuletguard.eth`, issued as a real subname with a 30-day expiry under `amuletguard.eth`, with its own Permissioned Resolver and subregistry deployed through the Verifiable Factory. Addresses: `contracts/deployments/ens-11155111.json`.
+
+| Who | Holds | Can |
+|---|---|---|
+| Ledger account (`0x2118…7736`) | name-wide text-record admin on the resolver, `ROLE_RENEW` on the subname | edit every `amulet.*` policy record, renew or let the name lapse (kill switch) |
+| Brain hot key (`0x635D…53CA`) | `authorizeTextRoles` for exactly `amulet.status` and `amulet.last-action` | report what it is doing; nothing else (`setText("amulet.max_value_wei")` reverts with `EACUnauthorizedAccountRoles`) |
+| Deployer (`0xfc7e…7aD2`) | root roles from setup | stands in for the Ledger's role when a policy edit is needed without the Nano X in reach |
+
+Records (`amulet.version chain allowed max_value_wei max_token_usd tier1_hf tier2_hf drift_bps presence_timeout_s yield_delta_bps brain endpoint status last-action`) are read by the brain through the Universal Resolver at boot and every ten ticks, and by the pendant straight from the resolver at boot and hourly, cached in NVS. Both sides run the same check (`brain/src/engine/policy.ts`, `firmware/main/policy/policy.c`) against the same test vectors (`brain/test/vectors/policy.json`).
+
+```
+pnpm amulet ens show                      # records as any wallet reads them, plus who may edit what
+pnpm amulet ens set max_value_wei 2e16    # lower the cap (Ledger role); brain and pendant follow
+pnpm amulet attack --value 5              # compromised brain: pendant answers policy_reject
+pnpm amulet attack --raise-limit          # hot key tries to edit the policy: reverts
+```
+
 ## What the LLM does and does not decide
 
 The LLM writes the one-line human summary and the rationale. It **never** chooses the action, the target, or the amount. Those come from deterministic rules over Graph data, bounded by the ENS policy, and re-checked by the pendant before anything reaches the Ledger.

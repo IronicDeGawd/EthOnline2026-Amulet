@@ -71,6 +71,7 @@ export class Brain {
       if (diff.length) {
         d.log(`policy from ${read.name} changed: ${diff.join("; ")}`);
         d.policy = read.policy;
+        d.pendant.send({ type: "policy" }); // the wrist re-reads the name now, not in an hour
       } else if (this.ticks === 0) {
         d.log(`policy from ${read.name}: v${read.policy.version} chain ${read.policy.chain}, ${read.policy.allowed.length} targets, cap ${Number(read.policy.max_value_wei) / 1e18} ETH, tiers ${read.policy.tier1_hf}/${read.policy.tier2_hf}`);
       }
