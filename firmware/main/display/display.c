@@ -26,8 +26,6 @@ static bool s_ready;
 
 static lv_display_t *s_disp;
 static i2c_master_dev_handle_t s_touch;
-static lv_indev_t *s_indev;
-static lv_obj_t *s_dot, *s_coord;
 
 bool display_ready(void) { return s_ready; }
 
@@ -53,106 +51,48 @@ static void backlight_init(void)
     ledc_channel_config(&c);
 }
 
-// A deliberately loud first frame: if the panel is wired correctly this cannot be mistaken
-// for a dark screen or a stuck backlight. Colour blocks prove the pixel format and the
-// column/row offsets; the text proves the font and the framebuffer flush.
-static void boot_screen(void)
-{
-    if (!lvgl_port_lock(0)) return;
-    lv_obj_t *scr = lv_screen_active();
-    lv_obj_set_style_bg_color(scr, lv_color_hex(0x14181c), LV_PART_MAIN);   // Amulet ink
-
-    // Three bars across the middle: red, green, blue. Wrong colour order shows up instantly.
-    static const uint32_t cols[3] = { 0xd0342c, 0x2f9e44, 0x2b6cb0 };
-    for (int i = 0; i < 3; i++) {
-        lv_obj_t *bar = lv_obj_create(scr);
-        lv_obj_remove_style_all(bar);
-        lv_obj_set_size(bar, 240, 26);
-        lv_obj_set_pos(bar, 0, 96 + i * 26);
-        lv_obj_set_style_bg_color(bar, lv_color_hex(cols[i]), LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
-    }
-
-    lv_obj_t *name = lv_label_create(scr);
-    lv_label_set_text(name, "AMULET");
-    lv_obj_set_style_text_color(name, lv_color_hex(0xb8901f), LV_PART_MAIN);  // pad gold
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_28, LV_PART_MAIN);
-    lv_obj_align(name, LV_ALIGN_CENTER, 0, -58);
-
-    // Follows your finger. Wherever the dot is NOT under the fingertip, an axis is wrong.
-    s_dot = lv_obj_create(scr);
-    lv_obj_remove_style_all(s_dot);
-    lv_obj_set_size(s_dot, 18, 18);
-    lv_obj_set_style_radius(s_dot, 9, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_dot, lv_color_hex(0xffffff), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_dot, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_add_flag(s_dot, LV_OBJ_FLAG_HIDDEN);
-
-    s_coord = lv_label_create(scr);
-    lv_label_set_text(s_coord, "touch me");
-    lv_obj_set_style_text_color(s_coord, lv_color_hex(0xe9ecee), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s_coord, &lv_font_montserrat_20, LV_PART_MAIN);
-    lv_obj_align(s_coord, LV_ALIGN_CENTER, 0, 88);
-
-    lv_obj_t *sub = lv_label_create(scr);
-    lv_label_set_text(sub, "panel ok");
-    lv_obj_set_style_text_color(sub, lv_color_hex(0xe9ecee), LV_PART_MAIN);
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_20, LV_PART_MAIN);
-    lv_obj_align(sub, LV_ALIGN_CENTER, 0, 62);
-
-    lvgl_port_unlock();
-}
-
 #define CHSC6X_ADDR       0x2e
 #define CHSC6X_READ_LEN   5
 
+// INT is a PULSE, not a level: the CHSC6X strobes it on each new touch report rather than
+// holding it low for the duration of a press. Reading the pin's instantaneous level therefore
+// reports "released" between reports, which broke hold-to-confirm — the progress ring reset
+// several times a second while a finger was clearly down.
+//
+// So the pin is not read at all, and the controller itself is polled for the truth. A press
+// is latched for HOLD_LATCH_MS past the last valid report, which bridges the gap between
+// reports without making a real release feel sluggish.
+#define HOLD_LATCH_MS 80
 
-// Finger down is signalled by INT going low, not by polling I2C. Re-check once after a short
-// delay: the line is open-drain and glitches as the finger lands.
-static bool touch_pressed(void)
-{
-    if (gpio_get_level(AMULET_PIN_TP_INT) != 0) {
-        esp_rom_delay_us(1000);
-        if (gpio_get_level(AMULET_PIN_TP_INT) != 0) return false;
-    }
-    return true;
-}
+static uint32_t s_last_valid_ms;
+static int16_t  s_last_x, s_last_y;
 
 // The CHSC6X answers a plain 5-byte read with no register address:
 //   [0] = 1 when a point is valid, [2] = x, [4] = y. Coordinates are already 0..239.
+// Out-of-range values arrive alongside a valid flag occasionally, as Seeed's own
+// esp_lcd_touch_chsc6x guards against; unchecked they fling the pointer to a corner.
 static void chsc6x_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
-    if (!touch_pressed()) { data->state = LV_INDEV_STATE_RELEASED; return; }
-
+    (void)indev;
     uint8_t buf[CHSC6X_READ_LEN] = {0};
-    // Bounds-check the coordinates as Seeed's own esp_lcd_touch_chsc6x does: the controller
-    // occasionally reports a valid flag with out-of-range values, which would fling the
-    // pointer to a corner mid-gesture.
-    if (i2c_master_receive(s_touch, buf, sizeof buf, 50) != ESP_OK || buf[0] != 0x01 ||
-        buf[2] >= LCD_H_RES || buf[4] >= LCD_V_RES) {
-        data->state = LV_INDEV_STATE_RELEASED;
-        return;
+    bool valid = (i2c_master_receive(s_touch, buf, sizeof buf, 50) == ESP_OK) &&
+                 buf[0] == 0x01 && buf[2] < LCD_H_RES && buf[4] < LCD_V_RES;
+
+    uint32_t now = lv_tick_get();
+    if (valid) {
+        s_last_x = buf[2];
+        s_last_y = buf[4];
+        s_last_valid_ms = now;
     }
 
-    // Verified on hardware: the controller already reports X in the same frame the panel
-    // displays, so mirroring it here (to match the panel's mirror_x) inverts it wrongly.
-    data->point.x = buf[2];
-    data->point.y = buf[4];
-    data->state = LV_INDEV_STATE_PRESSED;
-}
-
-static void touch_tick(lv_timer_t *t)
-{
-    (void)t;
-    if (!s_indev || !s_dot) return;
-    if (lv_indev_get_state(s_indev) == LV_INDEV_STATE_PRESSED) {
-        lv_point_t p;
-        lv_indev_get_point(s_indev, &p);
-        lv_obj_set_pos(s_dot, p.x - 9, p.y - 9);
-        lv_obj_clear_flag(s_dot, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text_fmt(s_coord, "%d,%d", (int)p.x, (int)p.y);
+    // Hold the last known coordinates while the latch stands, so a dropped report does not
+    // make the pointer jump mid-gesture.
+    if (s_last_valid_ms && (now - s_last_valid_ms) < HOLD_LATCH_MS) {
+        data->point.x = s_last_x;
+        data->point.y = s_last_y;
+        data->state = LV_INDEV_STATE_PRESSED;
     } else {
-        lv_obj_add_flag(s_dot, LV_OBJ_FLAG_HIDDEN);
+        data->state = LV_INDEV_STATE_RELEASED;
     }
 }
 
@@ -209,7 +149,6 @@ esp_err_t display_init(void)
     // a silent touch controller must never leave the screen dark.
     s_ready = true;
     display_backlight(100);
-    boot_screen();
     ESP_LOGI(TAG, "panel up, LVGL %d.%d.%d, backlight on",
              lv_version_major(), lv_version_minor(), lv_version_patch());
 
@@ -253,7 +192,8 @@ esp_err_t display_init(void)
         return ESP_OK;
     }
 
-    // INT is an open-drain output from the controller: low while a finger is down.
+    // INT is not read (see chsc6x_read: it pulses rather than holding), but keep it pulled
+    // up and configured — floating is worse, and it is the natural wake source later.
     gpio_config_t intcfg = {
         .pin_bit_mask = 1ULL << AMULET_PIN_TP_INT,
         .mode = GPIO_MODE_INPUT,
@@ -264,12 +204,10 @@ esp_err_t display_init(void)
     ESP_ERROR_CHECK(gpio_config(&intcfg));
 
     lv_indev_t *indev = lv_indev_create();
-    s_indev = indev;
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_display(indev, s_disp);
     lv_indev_set_read_cb(indev, chsc6x_read);
 
-    if (lvgl_port_lock(0)) { lv_timer_create(touch_tick, 50, NULL); lvgl_port_unlock(); }
     ESP_LOGI(TAG, "touch up (CHSC6X @ 0x%02x, INT on GPIO%d)", CHSC6X_ADDR, AMULET_PIN_TP_INT);
     return ESP_OK;
 }
