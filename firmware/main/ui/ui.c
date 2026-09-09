@@ -134,7 +134,7 @@ static bool s_press_counts, s_hold_view;
 
 // The hold always runs on a proposal. Armed, it signs; unarmed, it goes and finds the
 // Ledger (pairing it if needed) and comes back here. The wearer never has to leave.
-static bool proposal_armed(void) { return true; }
+static bool proposal_armed(void) { return s_p_tier > 0; }   // an advisory has nothing to hold for
 static bool never_armed(void) { return false; }   // the pairing code screen: nothing to hold for
 
 static void holding_view(bool on)

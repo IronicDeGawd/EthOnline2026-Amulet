@@ -457,6 +457,9 @@ void app_main(void)
         }
 
         bool prop_confirm = ui_state() == UI_PROPOSAL && ui_take_confirm();   // taken once
+        // An advisory (tier 0) carries nothing to sign; the screen never arms the hold for it,
+        // and this guard keeps a stray confirm from reaching the Ledger with the placeholder tx.
+        if (prop_confirm && s_pending.tier == 0) prop_confirm = false;
         if (prop_confirm && !st.ledger) {
             // Held while the Ledger was not answering: go and find it (pairing runs inside if
             // there is no bond yet), then the loop below puts the proposal back on screen.
