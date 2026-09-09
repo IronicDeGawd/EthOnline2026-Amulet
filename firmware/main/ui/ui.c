@@ -36,6 +36,8 @@ static lv_obj_t *s_p_lock, *s_p_lock1, *s_p_lock2;              // locked row
 static lv_obj_t *s_p_arc, *s_p_signing;                         // holding
 static lv_obj_t *s_a_badge, *s_a_i, *s_a_label, *s_a_amount, *s_a_unit, *s_a_detail;  // advisory
 static lv_obj_t *s_p_touch;
+// DETAIL sheet over the proposal: tap the pill to open, tap anywhere to close.
+static lv_obj_t *s_d_sheet, *s_d_title, *s_d_why, *s_d_evidence, *s_d_target, *s_d_back;
 // PAIRING: the numeric-comparison code, hold to accept
 static lv_obj_t *s_pr_code, *s_pr_btn, *s_pr_arrow, *s_pr_hold, *s_pr_arc, *s_pr_pairing;
 // LEDGER: pair / paired / removed
@@ -123,7 +125,9 @@ typedef struct {
     void (*view)(bool on);          // swap the screen between resting and holding
     bool (*armed)(void);            // NULL = always
     void (*on_swipe)(lv_dir_t d);   // NULL = a swipe dismisses (s_reject)
+    void (*on_tap)(const lv_point_t *at);   // a short press with no drag; NULL = ignored
 } hold_t;
+#define TAP_MS 350             // released within this, without a drag, is a tap
 static hold_t s_hold_prop, s_hold_pair, s_hold_ledger;
 static uint32_t s_shown_at, s_press_at;
 static bool s_press_counts, s_hold_view;
@@ -194,7 +198,12 @@ static void hold_event(lv_event_t *e)
         return;
     }
     if (code == LV_EVENT_GESTURE) { swiped(h, lv_indev_get_gesture_dir(lv_indev_active())); return; }
-    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) hold_end(h);
+    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        bool tap = code == LV_EVENT_RELEASED && !s_swiped && !s_hold_view && (now - s_press_at) < TAP_MS
+                   && (now - s_shown_at) > HOLD_GRACE_MS;
+        hold_end(h);
+        if (tap && h->on_tap) h->on_tap(&s_press_pt);
+    }
 }
 
 // Full-disc touch layer wired to the hold/swipe handler above.
@@ -284,6 +293,24 @@ static void build_home(void)
     show(s_bat_body, false); show(s_bat_tip, false); show(s_bat_text, false);
 }
 
+// The pill on the proposal screen opens the detail sheet; the sheet closes on any tap.
+static void detail_close(lv_event_t *e)
+{
+    (void)e;
+    show(s_d_sheet, false);
+    s_shown_at = lv_tick_get();          // the closing tap must not count as the start of a hold
+    s_press_counts = false;
+}
+
+static void proposal_tap(const lv_point_t *at)
+{
+    if (s_p_tier == 0 || !s_d_sheet) return;
+    // the pill sits at 58,146 124x24; a little slack for a fingertip
+    if (at->x < 50 || at->x > 190 || at->y < 136 || at->y > 180) return;
+    show(s_d_sheet, true);
+    ESP_LOGI(TAG, "detail opened");
+}
+
 static void build_proposal(void)
 {
     lv_obj_t *s = s_scr[UI_PROPOSAL] = screen(&bg_proposal, &s_p_bg);
@@ -303,9 +330,11 @@ static void build_proposal(void)
     s_p_pill_text = lv_label_create(s_p_pill);
     lv_obj_set_style_text_font(s_p_pill_text, &manrope_700_13, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_p_pill_text, lv_color_hex(C_TEXT), LV_PART_MAIN);
-    // The brain's rationale can run to 140 chars; the pill shows what fits and dots the rest.
-    lv_obj_set_width(s_p_pill_text, 112);
-    lv_label_set_long_mode(s_p_pill_text, LV_LABEL_LONG_DOT);
+    // The brain's rationale can run to 90 chars. One fixed line (an auto-height label wraps
+    // and the pill clips to the middle line) that scrolls the whole sentence past.
+    lv_obj_set_size(s_p_pill_text, 112, 16);
+    lv_label_set_long_mode(s_p_pill_text, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_anim_duration(s_p_pill_text, 9000, LV_PART_MAIN);
     lv_obj_set_style_text_align(s_p_pill_text, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_center(s_p_pill_text);
 
@@ -334,8 +363,38 @@ static void build_proposal(void)
     s_a_detail = text(s, &manrope_500_15, C_MUTED, 168, "");
 
     // the whole disc listens for the hold and the swipe
-    s_hold_prop = (hold_t){ .arc = s_p_arc, .view = holding_view, .armed = proposal_armed };
+    s_hold_prop = (hold_t){ .arc = s_p_arc, .view = holding_view, .armed = proposal_armed, .on_tap = proposal_tap };
     s_p_touch = touch_layer(s, &s_hold_prop);
+
+    // Detail sheet, above the touch layer so the hold/swipe handler never sees its presses.
+    s_d_sheet = lv_obj_create(s);
+    lv_obj_remove_style_all(s_d_sheet);
+    lv_obj_set_size(s_d_sheet, 240, 240);
+    lv_obj_set_pos(s_d_sheet, 0, 0);
+    lv_obj_set_style_bg_color(s_d_sheet, lv_color_hex(0x0b1018), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_d_sheet, 242, LV_PART_MAIN);           // 95%: the proposal ghosts through
+    lv_obj_add_flag(s_d_sheet, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(s_d_sheet, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_add_event_cb(s_d_sheet, detail_close, LV_EVENT_CLICKED, NULL);
+    // The disc is only 158 px wide at y=30 and 192 px at y=48, so everything sits in a
+    // 180 px column starting at y=48. The paragraph is a fixed four-line box that ends in
+    // dots rather than running under the rim.
+    s_d_title = text(s_d_sheet, &manrope_700_15, C_TEXT, 48, "");
+    lv_obj_set_size(s_d_title, 180, 20);
+    lv_obj_set_pos(s_d_title, 30, 48);
+    lv_label_set_long_mode(s_d_title, LV_LABEL_LONG_DOT);
+    s_d_why = lv_label_create(s_d_sheet);
+    lv_obj_set_style_text_font(s_d_why, &manrope_500_13, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_d_why, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_align(s_d_why, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(s_d_why, 2, LV_PART_MAIN);
+    lv_label_set_long_mode(s_d_why, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(s_d_why, 180, 68);           // 4 lines of 13 px type
+    lv_obj_set_pos(s_d_why, 30, 74);
+    s_d_evidence = text(s_d_sheet, &manrope_500_11, C_MUTED, 152, "");
+    s_d_target   = text(s_d_sheet, &manrope_500_11, C_MUTED, 168, "");
+    s_d_back     = text(s_d_sheet, &manrope_500_13, C_MUTED, 198, "Tap to go back");
+    show(s_d_sheet, false);
 }
 
 // First-time Ledger pairing: the same 6-digit code shows on the Nano X; hold to accept it
@@ -639,6 +698,16 @@ void ui_show_proposal(const amulet_proposal_t *p)
         lv_label_set_text(s_p_unit,   split ? unit : "");
         char pill[96]; snprintf(pill, sizeof pill, "%s", p->rationale);
         lv_label_set_text(s_p_pill_text, pill);
+        // detail sheet: the same words at full length, plus where they came from
+        lv_label_set_text(s_d_title, p->human);
+        lv_label_set_text(s_d_why, p->rationale[0] ? p->rationale : "No reason given");
+        char dep[24] = "no evidence";
+        if (p->deployment_id[0]) snprintf(dep, sizeof dep, "%.6s..%s", p->deployment_id,
+                                          p->deployment_id + (strlen(p->deployment_id) > 4 ? strlen(p->deployment_id) - 4 : 0));
+        lv_label_set_text_fmt(s_d_evidence, "%s  block %" PRIu64, dep, p->evidence_block);
+        char to[24]; proposal_format_addr(p->to, to, sizeof to);
+        lv_label_set_text_fmt(s_d_target, "to %s  tier %u", to, (unsigned)p->tier);
+        show(s_d_sheet, false);
         // A tier-2 proposal needs the Ledger answering before the hold does anything.
         s_armed = (p->tier < 2) || s_status.ledger;
         holding_view(false);
