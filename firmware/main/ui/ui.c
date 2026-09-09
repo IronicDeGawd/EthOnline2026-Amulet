@@ -379,9 +379,9 @@ static void build_proposal(void)
     // The disc is only 158 px wide at y=30 and 192 px at y=48, so everything sits in a
     // 180 px column starting at y=48. The paragraph is a fixed four-line box that ends in
     // dots rather than running under the rim.
-    s_d_title = text(s_d_sheet, &manrope_700_15, C_TEXT, 48, "");
-    lv_obj_set_size(s_d_title, 180, 20);
-    lv_obj_set_pos(s_d_title, 30, 48);
+    s_d_title = text(s_d_sheet, &manrope_700_15, C_TEXT, 44, "");
+    lv_obj_set_size(s_d_title, 180, 40);         // two lines: "Repay 0.0062 ETH / on Sim-A"
+    lv_obj_set_pos(s_d_title, 30, 44);
     lv_label_set_long_mode(s_d_title, LV_LABEL_LONG_DOT);
     s_d_why = lv_label_create(s_d_sheet);
     lv_obj_set_style_text_font(s_d_why, &manrope_500_13, LV_PART_MAIN);
@@ -390,10 +390,10 @@ static void build_proposal(void)
     lv_obj_set_style_text_line_space(s_d_why, 2, LV_PART_MAIN);
     lv_label_set_long_mode(s_d_why, LV_LABEL_LONG_DOT);
     lv_obj_set_size(s_d_why, 180, 68);           // 4 lines of 13 px type
-    lv_obj_set_pos(s_d_why, 30, 74);
-    s_d_evidence = text(s_d_sheet, &manrope_500_11, C_MUTED, 152, "");
-    s_d_target   = text(s_d_sheet, &manrope_500_11, C_MUTED, 168, "");
-    s_d_back     = text(s_d_sheet, &manrope_500_13, C_MUTED, 198, "Tap to go back");
+    lv_obj_set_pos(s_d_why, 30, 88);
+    s_d_evidence = text(s_d_sheet, &manrope_500_11, C_MUTED, 160, "");
+    s_d_target   = text(s_d_sheet, &manrope_500_11, C_MUTED, 175, "");
+    s_d_back     = text(s_d_sheet, &manrope_500_13, C_MUTED, 200, "Tap to go back");
     show(s_d_sheet, false);
 }
 
