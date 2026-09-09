@@ -125,13 +125,18 @@ static void chsc6x_read(lv_indev_t *indev, lv_indev_data_t *data)
     if (!touch_pressed()) { data->state = LV_INDEV_STATE_RELEASED; return; }
 
     uint8_t buf[CHSC6X_READ_LEN] = {0};
-    if (i2c_master_receive(s_touch, buf, sizeof buf, 50) != ESP_OK || buf[0] != 0x01) {
+    // Bounds-check the coordinates as Seeed's own esp_lcd_touch_chsc6x does: the controller
+    // occasionally reports a valid flag with out-of-range values, which would fling the
+    // pointer to a corner mid-gesture.
+    if (i2c_master_receive(s_touch, buf, sizeof buf, 50) != ESP_OK || buf[0] != 0x01 ||
+        buf[2] >= LCD_H_RES || buf[4] >= LCD_V_RES) {
         data->state = LV_INDEV_STATE_RELEASED;
         return;
     }
 
-    // The panel is driven with mirror_x, so mirror the reported X to match what is on screen.
-    data->point.x = (LCD_H_RES - 1) - buf[2];
+    // Verified on hardware: the controller already reports X in the same frame the panel
+    // displays, so mirroring it here (to match the panel's mirror_x) inverts it wrongly.
+    data->point.x = buf[2];
     data->point.y = buf[4];
     data->state = LV_INDEV_STATE_PRESSED;
 }
