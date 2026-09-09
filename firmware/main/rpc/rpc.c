@@ -31,7 +31,8 @@ static cJSON *call_json(const char *method, const char *params_json, char *err_o
     if (oe != ESP_OK) {
         ESP_LOGE(TAG, "%s: open failed: %s (free heap %u, internal %u)", method, esp_err_to_name(oe),
                  (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-        if (err_out) snprintf(err_out, err_cap, "no route to RPC (%s)", esp_err_to_name(oe));
+        // The full ESP name is one unbreakable word wider than the screen; the log has it.
+        if (err_out) snprintf(err_out, err_cap, "no route to RPC, error 0x%x", (unsigned)oe);
         goto out;
     }
     esp_http_client_write(c, body, n);

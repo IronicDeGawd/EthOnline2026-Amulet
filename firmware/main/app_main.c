@@ -506,7 +506,7 @@ void app_main(void)
                 if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
                 // Not paired: back to this screen with the reason on its detail line.
                 ui_set_pairing(bonded ? UI_PAIR_PAIRED : UI_PAIR_NONE, addr,
-                               bonded ? NULL : (sw ? ledger_reason(sw) : "Not found. Unlocked, Bluetooth on?"));
+                               bonded ? NULL : (sw ? ledger_reason(sw) : "Not found. Is it unlocked?"));
                 if (ui_state() != UI_LEDGER) ui_show_ledger();
             }
         }
