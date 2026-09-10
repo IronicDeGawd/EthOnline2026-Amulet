@@ -117,6 +117,52 @@ done:
     return ok;
 }
 
+bool options_parse(const char *json, size_t len, amulet_options_t *out, char *err, size_t err_cap)
+{
+    bool ok = false;
+    memset(out, 0, sizeof *out);
+    cJSON *root = cJSON_ParseWithLength(json, len);
+    if (!root) FAIL("not JSON");
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    if (!cJSON_IsString(type) || strcmp(type->valuestring, "options") != 0) FAIL("not an options card");
+    if (!str_field(root, "id", out->id, sizeof out->id)) FAIL("no id");
+    if (!str_field(root, "asset", out->asset, sizeof out->asset)) FAIL("no asset");
+    str_field(root, "footer", out->footer, sizeof out->footer);
+    const cJSON *items = cJSON_GetObjectItemCaseSensitive(root, "items");
+    if (!cJSON_IsArray(items)) FAIL("no items");
+    const cJSON *it;
+    cJSON_ArrayForEach(it, items) {
+        if (out->n == OPT_MAX) break;
+        amulet_option_t *o = &out->items[out->n];
+        uint64_t idx = 0, apy = 0;
+        if (!u64_field(it, "idx", &idx) || idx > 255) FAIL("bad item idx");
+        if (!str_field(it, "human", o->human, sizeof o->human)) FAIL("item without text");
+        if (!u64_field(it, "apyBps", &apy) || apy > 1000000) FAIL("bad item rate");
+        str_field(it, "protocol", o->protocol, sizeof o->protocol);
+        o->idx = (uint8_t)idx;
+        o->apy_bps = (uint32_t)apy;
+        out->n++;
+    }
+    if (out->n == 0) FAIL("empty card");
+    const cJSON *ev = cJSON_GetObjectItemCaseSensitive(root, "evidence");
+    if (cJSON_IsObject(ev)) {
+        str_field(ev, "deploymentId", out->deployment_id, sizeof out->deployment_id);
+        u64_field(ev, "block", &out->evidence_block);
+    }
+    uint64_t exp = 0;
+    if (u64_field(root, "expiresAt", &exp)) out->expires_at = (int64_t)exp;
+    ok = true;
+done:
+    if (root) cJSON_Delete(root);
+    return ok;
+}
+
+bool options_expired(const amulet_options_t *o, int64_t now_unix)
+{
+    if (o->expires_at == 0 || now_unix == 0) return false;
+    return now_unix > o->expires_at;
+}
+
 bool proposal_expired(const amulet_proposal_t *p, int64_t now_unix)
 {
     if (p->expires_at == 0 || now_unix == 0) return false;

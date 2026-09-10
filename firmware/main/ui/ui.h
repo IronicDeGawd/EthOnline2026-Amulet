@@ -15,6 +15,7 @@ typedef enum {
     UI_PHOTO,         // swipe left from HOME; swipe right returns
     UI_PAIRING,       // first-time Ledger pairing: compare the code, hold to accept
     UI_LEDGER,        // swipe right from HOME: pair / paired / removed
+    UI_OPTIONS,       // a yield card: up to three venues, tap one, swipe to dismiss
 } ui_state_t;
 
 typedef enum { UI_PAIR_NONE, UI_PAIR_PAIRED, UI_PAIR_REMOVED } ui_pair_t;
@@ -24,6 +25,7 @@ typedef struct {
     bool wifi;
     bool brain;       // websocket connected to the agent
     bool ledger;      // BLE connected AND Ethereum app answering
+    bool policy_stale; // no ENS policy read for a day (or never): HOME says so
     uint64_t nonce;
 } ui_status_t;
 
@@ -35,7 +37,11 @@ void ui_show_home(void);
 void ui_show_proposal(const amulet_proposal_t *p);
 void ui_show_ledger_wait(const char *what);   // e.g. "Confirm on your Nano X"
 void ui_show_result(bool ok, const char *detail);  // tx hash, or the failure reason
-void ui_show_dismissed(bool advisory);             // after a swipe: "Declined" / "Dismissed"
+void ui_show_dismissed(bool advisory);
+void ui_show_policy_reject(const char *reason);   // the pendant refused it before the Ledger saw it
+void ui_show_options(const amulet_options_t *o);  // yield card: tap a row to pick, swipe to dismiss
+bool ui_take_pick(int *idx);                       // true once per tapped row
+void ui_show_picked(const char *venue);            // "Picked · Spark WETH", the agent is building the proposal             // after a swipe: "Declined" / "Dismissed"
 void ui_show_blocked(const char *reason);          // "Brain offline", "Unlock your Ledger", ...
 void ui_show_idle(void);                           // the reactor; backlight to half
 void ui_show_pairing(uint32_t code);               // 6-digit numeric comparison; hold = accept, swipe = refuse

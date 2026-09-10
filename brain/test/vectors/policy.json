@@ -156,6 +156,42 @@
         "expiresAt": 1800000600
       },
       "expect": false
+    },
+    {
+      "name": "plain transfer to listed target",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x2386f26fc10000",
+        "data": "0x",
+        "gas": 21000,
+        "expiresAt": 1800000600
+      },
+      "expect": true
+    },
+    {
+      "name": "plain transfer to listed target over cap",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+        "value": "0x4563918244f40000",
+        "data": "0x",
+        "gas": 21000,
+        "expiresAt": 1800000600
+      },
+      "expect": false
+    },
+    {
+      "name": "plain transfer to unknown target",
+      "tx": {
+        "chainId": 11155111,
+        "to": "0x000000000000000000000000000000000000dEaD",
+        "value": "0x2386f26fc10000",
+        "data": "0x",
+        "gas": 21000,
+        "expiresAt": 1800000600
+      },
+      "expect": false
     }
   ]
 }

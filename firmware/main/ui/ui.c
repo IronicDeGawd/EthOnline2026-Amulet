@@ -23,7 +23,11 @@ static ui_state_t s_state = UI_HOME;
 static bool s_confirm, s_reject, s_armed;
 static ui_status_t s_status;
 
-static lv_obj_t *s_scr[UI_LEDGER + 1];
+static lv_obj_t *s_scr[UI_OPTIONS + 1];
+
+// OPTIONS (yield card)
+static lv_obj_t *s_o_title, *s_o_row[3], *s_o_name[3], *s_o_rate[3], *s_o_footer, *s_o_arc;
+static int s_o_n, s_pick = -1;
 
 // HOME
 static lv_obj_t *s_home_line1, *s_home_line2, *s_home_date, *s_home_time;
@@ -128,7 +132,7 @@ typedef struct {
     void (*on_tap)(const lv_point_t *at);   // a short press with no drag; NULL = ignored
 } hold_t;
 #define TAP_MS 350             // released within this, without a drag, is a tap
-static hold_t s_hold_prop, s_hold_pair, s_hold_ledger;
+static hold_t s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts;
 static uint32_t s_shown_at, s_press_at;
 static bool s_press_counts, s_hold_view;
 
@@ -600,12 +604,102 @@ static void build_photo(void)
     lv_obj_add_event_cb(s, swipe, LV_EVENT_GESTURE, NULL);
 }
 
+static void go(ui_state_t st);
+
+// OPTIONS: a yield card. Three rows the brain ranked, each a venue for the same asset; the
+// wearer taps one (the brain then sends a normal proposal) or swipes it away. No hold here:
+// nothing on this screen is signed.
+#define OPT_ROW_Y0 64
+#define OPT_ROW_H  40
+static void options_view(bool on) { (void)on; }
+static void options_tap(const lv_point_t *at)
+{
+    int i = (at->y - OPT_ROW_Y0) / OPT_ROW_H;
+    if (at->y < OPT_ROW_Y0 || i < 0 || i >= s_o_n) return;
+    s_pick = i;
+    ESP_LOGI(TAG, "option %d tapped", i);
+}
+
+static void build_options(void)
+{
+    lv_obj_t *s = s_scr[UI_OPTIONS] = screen(&bg_base, NULL);
+    s_o_title = text(s, &manrope_700_15, C_TEXT, 44, "Better yield for WETH");
+    for (int i = 0; i < 3; i++) {
+        int y = OPT_ROW_Y0 + i * OPT_ROW_H + 4;   // 32 px pill inside a 40 px row
+        s_o_row[i] = lv_obj_create(s);
+        lv_obj_remove_style_all(s_o_row[i]);
+        lv_obj_set_size(s_o_row[i], 176, 32);
+        lv_obj_set_pos(s_o_row[i], 32, y);
+        lv_obj_set_style_radius(s_o_row[i], 12, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_o_row[i], lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_o_row[i], 33, LV_PART_MAIN);
+        s_o_name[i] = lv_label_create(s_o_row[i]);
+        lv_obj_set_style_text_font(s_o_name[i], &manrope_500_13, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_o_name[i], lv_color_hex(C_TEXT), LV_PART_MAIN);
+        lv_obj_set_size(s_o_name[i], 88, 18);
+        lv_label_set_long_mode(s_o_name[i], LV_LABEL_LONG_DOT);
+        lv_obj_align(s_o_name[i], LV_ALIGN_LEFT_MID, 12, 0);
+        s_o_rate[i] = lv_label_create(s_o_row[i]);
+        lv_obj_set_style_text_font(s_o_rate[i], &manrope_700_15, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_o_rate[i], lv_color_hex(i == 0 ? C_BLUE : C_TEXT), LV_PART_MAIN);
+        lv_obj_align(s_o_name[i], LV_ALIGN_LEFT_MID, 12, 0);
+        lv_obj_align(s_o_rate[i], LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+    s_o_footer = text(s, &manrope_500_11, C_MUTED, 188, "mainnet data, sim run");
+    s_o_arc = rim_arc(s);
+    s_hold_opts = (hold_t){ .arc = s_o_arc, .view = options_view, .armed = never_armed, .on_tap = options_tap };
+    touch_layer(s, &s_hold_opts);
+}
+
+void ui_show_options(const amulet_options_t *o)
+{
+    s_o_n = o->n; s_pick = -1;
+    if (!display_ready() || !s_o_title || !lvgl_port_lock(0)) { s_state = UI_OPTIONS; return; }
+    lv_label_set_text_fmt(s_o_title, "Better yield for %s", o->asset);
+    for (int i = 0; i < 3; i++) {
+        bool on = i < o->n;
+        if (on) {
+            lv_label_set_text(s_o_name[i], o->items[i].human);
+            lv_label_set_text_fmt(s_o_rate[i], "%u.%02u%%", (unsigned)(o->items[i].apy_bps / 100), (unsigned)(o->items[i].apy_bps % 100));
+        }
+        show(s_o_row[i], on);
+    }
+    lv_label_set_text(s_o_footer, o->footer[0] ? o->footer : "mainnet data, sim run");
+    s_press_counts = false;
+    s_shown_at = lv_tick_get();
+    s_confirm = s_reject = false;
+    display_backlight(100);
+    lv_screen_load(s_scr[UI_OPTIONS]);
+    s_state = UI_OPTIONS;
+    lvgl_port_unlock();
+}
+
+// A row was tapped: say so while the brain turns it into a proposal.
+void ui_show_picked(const char *venue)
+{
+    if (display_ready() && s_r_title && lvgl_port_lock(0)) {
+        lv_image_set_src(s_r_bg, &bg_base);
+        lv_label_set_text(s_r_title, "Picked");
+        lv_obj_set_style_text_font(s_r_detail, &manrope_500_13, LV_PART_MAIN);
+        lv_label_set_text_fmt(s_r_detail, "%s - asking the agent", venue && venue[0] ? venue : "that one");
+        lvgl_port_unlock();
+    }
+    go(UI_RESULT);
+}
+
+bool ui_take_pick(int *idx)
+{
+    if (s_pick < 0) return false;
+    *idx = s_pick; s_pick = -1;
+    return true;
+}
+
 void ui_init(void)
 {
     if (!display_ready()) { ESP_LOGW(TAG, "no panel - UI disabled, signing runs headless"); return; }
     if (!lvgl_port_lock(0)) return;
     build_home(); build_proposal(); build_wait(); build_result(); build_blocked(); build_idle();
-    build_photo(); build_pairing(); build_ledger();
+    build_photo(); build_pairing(); build_ledger(); build_options();
     lv_screen_load(s_scr[UI_HOME]);
     s_state = UI_HOME;
     lvgl_port_unlock();
@@ -632,6 +726,7 @@ void ui_set_status(const ui_status_t *s)
     const char *l1 = s->wifi ? "Watching" : "Offline";
     const char *l2 = !s->wifi   ? "No wifi" :
                      !s->ledger ? (s_l_state == UI_PAIR_PAIRED ? "Ledger away" : "Ledger not paired") :
+                     s->policy_stale ? "Policy not refreshed" :
                      !s->brain  ? "Waiting for the agent" : "Ready for proposals";
     lv_label_set_text(s_home_line1, l1);
     lv_label_set_text(s_home_line2, l2);
@@ -804,6 +899,19 @@ void ui_show_dismissed(bool advisory)
         lv_label_set_text(s_r_title, advisory ? "Dismissed" : "Declined");
         lv_obj_set_style_text_font(s_r_detail, &manrope_500_13, LV_PART_MAIN);
         lv_label_set_text(s_r_detail, advisory ? "Noted, nothing to do" : "Nothing was signed");
+        lvgl_port_unlock();
+    }
+    go(UI_RESULT);
+}
+
+// The pendant's own no: the proposal broke the ENS policy, so the Ledger never saw it.
+void ui_show_policy_reject(const char *reason)
+{
+    if (display_ready() && s_r_title && lvgl_port_lock(0)) {
+        lv_image_set_src(s_r_bg, &bg_notsent);
+        lv_label_set_text(s_r_title, "Refused");
+        lv_obj_set_style_text_font(s_r_detail, &manrope_500_13, LV_PART_MAIN);
+        lv_label_set_text(s_r_detail, reason && reason[0] ? reason : "Outside the policy");
         lvgl_port_unlock();
     }
     go(UI_RESULT);

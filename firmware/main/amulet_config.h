@@ -3,6 +3,13 @@
 #define AMULET_TZ           "IST-5:30"   // POSIX TZ for the clock on HOME
 #define AMULET_CHAIN_ID     11155111ULL                                  // Sepolia
 #define AMULET_RPC_URL      "https://ethereum-sepolia-rpc.publicnode.com"
+// Policy: text records on this ENSv2 name (Sepolia beta, contracts-v2 @ 97a5729). The
+// resolver proxy address comes from contracts/deployments/ens-11155111.json; the pendant
+// calls text(node,key) on it directly (see ens/ens.c) and caches the result in NVS.
+#define AMULET_POLICY_NAME     "guardian.amuletguard.eth"
+#define AMULET_POLICY_RESOLVER "0xaFc05130255CaFb6cB181DBF1e81265EE5a6FB19"
+#define AMULET_POLICY_REFRESH_S   3600   // re-read this often while awake
+#define AMULET_POLICY_STALE_S    86400   // older than this with no refresh: HOME says so
 #define AMULET_TEST_VALUE_WEI 100000000000000ULL                          // 0.0001 ETH
 #define AMULET_TX_TYPE      2   // 2 = EIP-1559 (type 2), 0 = legacy (EIP-155)
 #define AMULET_BRAIN_ENABLED 1   // 0 until the agent exists; avoids reconnect spam at the

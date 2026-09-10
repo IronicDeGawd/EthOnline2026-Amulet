@@ -19,6 +19,8 @@
 #include "keccak.h"
 #include "tx.h"
 #include "rpc.h"
+#include "policy.h"
+#include "ens.h"
 #include "secrets.h"
 #include "amulet_config.h"
 
@@ -161,10 +163,51 @@ done:
 // task below, where blocking for a human to press a Ledger button is fine.
 static amulet_proposal_t s_pending;
 static volatile bool s_have_pending;
+// The handoff crosses cores: the copy and the flag are published under a spinlock so the
+// main task never sees the flag before every byte of the proposal.
+static portMUX_TYPE s_pending_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool take_pending_flag(void)
+{
+    portENTER_CRITICAL(&s_pending_mux);
+    bool have = s_have_pending;
+    portEXIT_CRITICAL(&s_pending_mux);
+    return have;
+}
+// A yield card waiting to be shown; same handoff as a proposal.
+static amulet_options_t s_options;
+static volatile bool s_have_options;
+static bool take_options_flag(void)
+{
+    portENTER_CRITICAL(&s_pending_mux);
+    bool have = s_have_options;
+    portEXIT_CRITICAL(&s_pending_mux);
+    return have;
+}
+// The policy the wrist enforces, from ENS (ens/ens.c). Written and read on the main task
+// only: the check runs there, just before a proposal is shown, so a refresh can never be
+// half-applied under a check running on the websocket task.
+static policy_t s_policy;
+static volatile bool s_policy_refresh_now;   // the brain saw the ENS records change
 static void on_ws_rx(const char *data, size_t len)
 {
     char err[64];
     amulet_proposal_t p;
+    if (len < 64) {   // tiny control message; the frame is not NUL-terminated
+        char head[64]; memcpy(head, data, len); head[len] = 0;
+        if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
+    }
+    // A yield card is not a proposal: nothing to sign until a row is tapped.
+    if (len > 20 && memmem(data, len < 40 ? len : 40, "\"options\"", 9)) {
+        amulet_options_t o;
+        if (!options_parse(data, len, &o, err, sizeof err)) { ESP_LOGW(TAG, "ignored card: %s", err); return; }
+        if (take_pending_flag() || s_have_options) { ESP_LOGW(TAG, "busy, dropped card %s", o.id); return; }
+        portENTER_CRITICAL(&s_pending_mux);
+        s_options = o;
+        s_have_options = true;
+        portEXIT_CRITICAL(&s_pending_mux);
+        ESP_LOGI(TAG, "yield card %s: %u venues for %s", o.id, o.n, o.asset);
+        return;
+    }
     if (!proposal_parse(data, len, &p, err, sizeof err)) {
         ESP_LOGW(TAG, "ignored message: %s", err);
         return;
@@ -174,10 +217,24 @@ static void on_ws_rx(const char *data, size_t len)
                  (unsigned long long)p.chain_id, (unsigned long long)AMULET_CHAIN_ID);
         return;
     }
-    if (s_have_pending) { ESP_LOGW(TAG, "already holding a proposal, dropped %s", p.id); return; }
+    if (take_pending_flag()) { ESP_LOGW(TAG, "already holding a proposal, dropped %s", p.id); return; }
+    portENTER_CRITICAL(&s_pending_mux);
     s_pending = p;
     s_have_pending = true;
+    portEXIT_CRITICAL(&s_pending_mux);
     ESP_LOGI(TAG, "proposal %s tier %u: %s", p.id, p.tier, p.human);
+}
+
+// Read the policy from ENS; keep the cached one when the network says no. Returns whether
+// what we hold is fresh enough to trust silently.
+static bool policy_refresh(bool *stale_out)
+{
+    bool ok = ens_fetch_policy(&s_policy);
+    int64_t age = s_policy.fetched_at ? (int64_t)time(NULL) - s_policy.fetched_at : INT64_MAX;
+    bool stale = !s_policy.valid || (!ok && age > AMULET_POLICY_STALE_S);
+    s_policy.stale = stale;
+    if (stale_out) *stale_out = stale;
+    return ok;
 }
 
 // Signs one proposal on the Ledger and broadcasts it. Returns true when it lands.
@@ -406,6 +463,15 @@ void app_main(void)
     ESP_LOGW(TAG, "brain disabled (AMULET_BRAIN_ENABLED=0) — no websocket");
 #endif
 
+    // Policy: the last copy from NVS first (boots with no network still enforce it), then a
+    // fresh read from the ENS name (six eth_calls, ~45 s; the brain link comes up meanwhile
+    // and any proposal simply waits in s_pending). HOME says when neither is recent.
+    if (ens_load_cached(&s_policy)) ESP_LOGI(TAG, "policy v%u from NVS (%u targets)", s_policy.version, s_policy.nallowed);
+    policy_refresh(&st.policy_stale);
+    ui_set_status(&st);
+    if (!s_policy.valid) ESP_LOGW(TAG, "no policy yet: every tier-1/2 proposal will be refused until %s answers", AMULET_POLICY_NAME);
+    time_t policy_tried = time(NULL);
+
 #if AMULET_FAKE_PROPOSAL
     // Fired from the idle loop the first time the Ledger is ready, rather than once at boot,
     // so unlocking late still gets the rehearsal.
@@ -451,9 +517,71 @@ void app_main(void)
             }
         }
 
-        if (s_have_pending && ui_state() != UI_PROPOSAL) {
-            ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
-            ui_show_proposal(&s_pending);
+        // Hourly policy refresh (or when the brain says so); a failed read retries in five
+        // minutes. Not while the Ledger is mid-signature or pairing: that path owns the radio.
+        if (ui_state() != UI_LEDGER_WAIT && ui_state() != UI_PAIRING) {
+            time_t now = time(NULL);
+            int64_t since_ok = s_policy.fetched_at ? (int64_t)now - s_policy.fetched_at : INT64_MAX;
+            if (s_policy_refresh_now || (since_ok > AMULET_POLICY_REFRESH_S && now - policy_tried > 300)) {
+                if (s_policy_refresh_now) ESP_LOGI(TAG, "brain says the policy changed; re-reading");
+                s_policy_refresh_now = false;
+                policy_tried = now;
+                bool stale;
+                policy_refresh(&stale);
+                if (stale != st.policy_stale) { st.policy_stale = stale; ui_set_status(&st); }
+            }
+        }
+
+        // A yield card: show it, then relay the tap (pick) or the swipe (dismiss) to the brain.
+        // The pick becomes a normal proposal on the brain's side; nothing is signed from here.
+        if (take_options_flag() && ui_state() != UI_OPTIONS) {
+            if (options_expired(&s_options, (int64_t)time(NULL))) {
+                ESP_LOGW(TAG, "yield card %s expired before it was shown", s_options.id);
+                s_have_options = false;
+            } else {
+                ui_attention(1);
+                ui_show_options(&s_options);
+            }
+        }
+        if (ui_state() == UI_OPTIONS) {
+            int idx;
+            char msg[128];
+            if (ui_take_pick(&idx)) {
+                snprintf(msg, sizeof msg, "{\"type\":\"pick\",\"id\":\"%s\",\"idx\":%d}", s_options.id, idx);
+                if (!ws_send_text(msg)) ESP_LOGW(TAG, "pick not delivered: %s", msg);
+                s_have_options = false;
+                ui_show_picked(s_options.items[idx < s_options.n ? idx : 0].human);
+                vTaskDelay(pdMS_TO_TICKS(1200));
+                ui_show_home();
+            } else if (ui_take_reject()) {
+                snprintf(msg, sizeof msg, "{\"type\":\"dismiss\",\"id\":\"%s\"}", s_options.id);
+                if (!ws_send_text(msg)) ESP_LOGW(TAG, "dismiss not delivered: %s", msg);
+                s_have_options = false;
+                ui_show_dismissed(true);
+                vTaskDelay(pdMS_TO_TICKS(1800));
+                ui_show_home();
+            } else if (options_expired(&s_options, (int64_t)time(NULL))) {
+                s_have_options = false;
+                ui_show_home();
+            }
+        }
+
+        if (take_pending_flag() && ui_state() != UI_PROPOSAL) {
+            // Policy first. Out of policy: answer the brain, show why, never arm — the
+            // Ledger never sees it.
+            char reason[POLICY_REASON_LEN];
+            if (!policy_within(&s_policy, &s_pending, (int64_t)time(NULL), reason, sizeof reason)) {
+                ESP_LOGW(TAG, "proposal %s REFUSED by policy: %s (%s)", s_pending.id, reason, s_pending.human);
+                send_decision(s_pending.id, "policy_reject", NULL);
+                ui_attention(2);
+                ui_show_policy_reject(reason);
+                s_have_pending = false;
+                vTaskDelay(pdMS_TO_TICKS(3000));
+                ui_show_home();
+            } else {
+                ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
+                ui_show_proposal(&s_pending);
+            }
         }
 
         bool prop_confirm = ui_state() == UI_PROPOSAL && ui_take_confirm();   // taken once

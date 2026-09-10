@@ -17,7 +17,7 @@ export interface MarketSnapshot {
 
 export interface RawMarket {
   id: string;
-  name: string;
+  name: string | null;
   inputToken: { symbol: string };
   totalDepositBalanceUSD: string;
   totalBorrowBalanceUSD: string;
@@ -39,7 +39,7 @@ export function toSnapshot(protocol: string, m: RawMarket): MarketSnapshot {
   const borrow = m.rates.find((r) => r.side === "BORROWER" && r.type === "VARIABLE");
   return {
     protocol,
-    market: m.name,
+    market: m.name ?? `${protocol} ${m.inputToken.symbol}`, // Spark leaves names null
     symbol: m.inputToken.symbol,
     depositUSD: dep,
     borrowUSD: bor,

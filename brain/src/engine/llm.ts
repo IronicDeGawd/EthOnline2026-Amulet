@@ -34,9 +34,29 @@ export function templateFor(c: Candidate): Explanation {
         rationale: `Up ${f.delta} pts in ${f.window} blocks; borrow rate ${f.borrowRate}%.`,
         source: "template",
       };
+    case "MOVE_SUPPLY":
+      // The pick behind a yield card: found on mainnet, executed on the Sepolia sim.
+      return {
+        human: `Supply ${f.amount} on ${f.market}`,
+        rationale: `${f.best} ${f.asset} ${f.bestRate}% beats ${f.current} ${f.curRate}% by ${f.delta} bps; mainnet data, sim execution.`,
+        source: "template",
+      };
+    case "OPTIONS":
+      return {
+        human: `Better yield for ${f.asset}`,
+        rationale: `${f.best} pays ${f.bestRate}%, ${f.current} ${f.curRate}%: ${f.delta} bps more.`,
+        source: "template",
+      };
     default:
       return { human: `${c.action} on ${f.market}`, rationale: "Rule fired.", source: "template" };
   }
+}
+
+// One row of the options card: the venue. The asset is in the card's title and the row is
+// 88 px wide, so "Compound", not "Compound V3 WETH - Wrapped Ether".
+export function optionLine(protocol: string, market: string): string {
+  void market;
+  return protocol.slice(0, 12);
 }
 
 export function buildPrompt(c: Candidate, ev: Evidence): { system: string; user: string } {
@@ -90,7 +110,9 @@ export function acceptOutput(text: string, c: Candidate): Explanation | undefine
 
 // The figures that must survive the model untouched, per action.
 export function mustKeep(c: Candidate): string[] {
-  const keys = c.action === "ADVISORY" ? ["to", "delta"] : ["amount", "hf"];
+  const keys = c.action === "ADVISORY" ? ["to", "delta"]
+    : c.action === "MOVE_SUPPLY" ? ["amount", "bestRate"]
+    : ["amount", "hf"];
   return keys.map((k) => c.facts[k]).filter((x): x is string => typeof x === "string");
 }
 

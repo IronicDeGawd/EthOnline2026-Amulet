@@ -79,6 +79,24 @@ static char *call(const char *method, const char *params_json, char *err_out, si
     return ret;
 }
 
+// eth_call against `to_hex` with `data_hex` (both 0x-prefixed). The hex result lands in
+// `out` (0x-prefixed, NUL-terminated); false if the node errored or it did not fit.
+bool rpc_eth_call(const char *to_hex, const char *data_hex, char *out, size_t out_cap)
+{
+    size_t pcap = strlen(data_hex) + 96;
+    char *p = malloc(pcap); if (!p) return false;
+    snprintf(p, pcap, "[{\"to\":\"%s\",\"data\":\"%s\"},\"latest\"]", to_hex, data_hex);
+    char err[64];
+    char *r = call("eth_call", p, err, sizeof err);
+    free(p);
+    if (!r) return false;
+    bool ok = strlen(r) < out_cap;
+    if (ok) strcpy(out, r);
+    else ESP_LOGW(TAG, "eth_call result %u bytes does not fit %u", (unsigned)strlen(r), (unsigned)out_cap);
+    free(r);
+    return ok;
+}
+
 bool rpc_get_nonce(const char *addr_hex, uint64_t *nonce)
 {
     char p[96]; snprintf(p, sizeof p, "[\"%s\",\"pending\"]", addr_hex);
