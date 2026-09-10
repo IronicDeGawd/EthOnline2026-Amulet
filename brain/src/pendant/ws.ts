@@ -9,11 +9,16 @@ export interface Decision { type: "decision"; id: string; result: DecisionResult
 export interface Presence { type: "presence"; uptime?: number; worn?: boolean; policyVersion?: number; address?: string }
 export type BrainState = "watching" | "proposing" | "stale" | "offline";
 
+export interface Pick { type: "pick"; id: string; idx: number }
+export interface Dismiss { type: "dismiss"; id: string }
+export type PickResult = { kind: "pick"; idx: number } | { kind: "dismiss" } | { kind: "expired" };
+
 export interface PendantEvents {
   connected: [];
   disconnected: [];
   decision: [Decision];
   presence: [Presence];
+  pick: [Pick | Dismiss];
 }
 
 export class PendantLink extends EventEmitter<PendantEvents> {
@@ -65,6 +70,20 @@ export class PendantLink extends EventEmitter<PendantEvents> {
     });
   }
 
+  // Resolves with the row the wearer tapped on an options card, a dismiss, or "expired".
+  awaitPick(id: string, timeoutMs: number): Promise<PickResult> {
+    return new Promise((resolve) => {
+      const onPick = (m: Pick | Dismiss) => {
+        if (m.id !== id) return;
+        cleanup();
+        resolve(m.type === "pick" ? { kind: "pick", idx: Number(m.idx) } : { kind: "dismiss" });
+      };
+      const timer = setTimeout(() => { cleanup(); resolve({ kind: "expired" }); }, timeoutMs);
+      const cleanup = () => { clearTimeout(timer); this.off("pick", onPick); };
+      this.on("pick", onPick);
+    });
+  }
+
   close(): void {
     this.sock?.close(1000, "bye");
     this.wss?.close();
@@ -75,5 +94,6 @@ export class PendantLink extends EventEmitter<PendantEvents> {
     try { m = JSON.parse(text); } catch { return; }
     if (m.type === "decision") this.emit("decision", m as Decision);
     else if (m.type === "presence") this.emit("presence", m as Presence);
+    else if (m.type === "pick" || m.type === "dismiss") this.emit("pick", m as Pick | Dismiss);
   }
 }

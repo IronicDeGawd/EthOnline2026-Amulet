@@ -3,8 +3,12 @@
 // the wrist, record the outcome on AmuletLog. Holds no key that can move funds.
 import type { PublicClient } from "viem";
 import {
-  LEDGER_ADDRESS, POLICY_REFRESH_TICKS, PROPOSAL_TTL_S, SUBGRAPHS, TICK_MS, type Deployments, type Policy,
+  DEFAULT_COOLDOWN_MS, LEDGER_ADDRESS, POLICY_REFRESH_TICKS, PROPOSAL_TTL_S, RULE_COOLDOWN_MS, SUBGRAPHS, TICK_MS,
+  YIELD_HOLD_BLOCKS, YIELD_TICKS, type Deployments, type Policy,
 } from "./config.js";
+import type { YieldRow, YieldTable } from "./data/graph/yield.js";
+import { assembleOptions, pickCandidate } from "./engine/options.js";
+import { CURRENT_VENUE, positionUsd, YIELD_LIQUIDITY_X } from "./engine/rules.js";
 import { policyDiff, type PolicyRead } from "./ens/resolver.js";
 import type { BrainStatus, StatusWriter } from "./ens/status.js";
 import { GraphClient } from "./data/graph/client.js";
@@ -25,6 +29,7 @@ export interface Simulation {
   hf?: number; // pretend the position sits at this HF (price is scaled in memory)
   utilSpike?: boolean; // pretend utilization jumped since the window start
   pinDeployment?: string; // pretend the pinned deployment is this one (freshness fails)
+  yield?: boolean; // pretend Spark pays 250 bps more than Aave for the asset, and skip the hold
 }
 
 export interface BrainDeps {
@@ -39,6 +44,7 @@ export interface BrainDeps {
   policySource?: () => Promise<PolicyRead>; // ENS; re-read every POLICY_REFRESH_TICKS
   status?: StatusWriter; // amulet.status / amulet.last-action on ENS
   mainnetView?: () => Promise<string>; // read-only line about the user's real position
+  yieldSource?: () => Promise<YieldTable>; // ranked venues for the position's asset
   log: (line: string) => void;
   simulate?: Simulation;
   once?: boolean; // stop after the first decision
@@ -53,6 +59,46 @@ export class Brain {
   private lastRuleAt = new Map<string, number>();
   private stopped = false;
   private ticks = 0;
+  private yieldRows?: YieldRow[];
+  private yieldSince?: number; // mainnet block since which the spread has held
+
+  // Ranked venues, refreshed every few ticks. Returns the rows only once the spread has held
+  // for YIELD_HOLD_BLOCKS (or at once under --simulate yield), so a one-block blip never
+  // reaches the wrist.
+  private async yieldContext(pos: Position, head: number): Promise<YieldRow[] | undefined> {
+    const { d } = this;
+    if (!d.yieldSource) return undefined;
+    if (!this.yieldRows || this.ticks % YIELD_TICKS === 1) {
+      try {
+        const t = await d.yieldSource();
+        this.yieldRows = t.rows;
+        if (t.skipped.length) d.log(`yield: skipped ${t.skipped.join("; ")}`);
+      } catch (e) {
+        d.log(`yield table failed: ${(e as Error).message.split("\n")[0]}`);
+      }
+    }
+    let rows = this.yieldRows;
+    if (!rows || rows.length < 2) return undefined;
+    if (d.simulate?.yield) {
+      const cur = rows.find((r) => r.protocol === CURRENT_VENUE);
+      if (cur) {
+        rows = rows.map((r) => (r.protocol === "Spark" ? { ...r, supplyRateBps: cur.supplyRateBps + 250 } : r)).sort((a, b) => b.supplyRateBps - a.supplyRateBps);
+        return rows;
+      }
+    }
+    const best = rows[0];
+    const cur = rows.find((r) => r.protocol === CURRENT_VENUE);
+    const above = !!cur && best.protocol !== CURRENT_VENUE
+      && best.supplyRateBps - cur.supplyRateBps > d.policy.yield_delta_bps
+      && best.depositUSD > YIELD_LIQUIDITY_X * positionUsd(pos);
+    if (!above) { this.yieldSince = undefined; return undefined; }
+    this.yieldSince ??= head;
+    if (head - this.yieldSince < YIELD_HOLD_BLOCKS) {
+      d.log(`yield: ${best.protocol} over ${cur!.protocol} by ${best.supplyRateBps - cur!.supplyRateBps} bps, holding since block ${this.yieldSince} (${head - this.yieldSince}/${YIELD_HOLD_BLOCKS})`);
+      return undefined;
+    }
+    return rows;
+  }
 
   // Pendant and ENS hear the same word.
   private setState(s: BrainStatus): void {
@@ -141,7 +187,7 @@ export class Brain {
     const past = d.simulate?.utilSpike && weth
       ? { ...weth, utilization: Math.max(0, weth.utilization - 0.15) }
       : this.utilHistory.find((s) => s.block <= fresh.evidence.block - d.policy.util_window_blocks)?.snap;
-    const market: MarketContext = { current: weth, past };
+    const market: MarketContext = { current: weth, past, yield: await this.yieldContext(pos, fresh.evidence.block) };
 
     d.log(
       `block ${fresh.evidence.block} (lag ${fresh.lag}) ${SUBGRAPHS.aaveV3.name} ${fresh.evidence.deploymentId.slice(0, 12)}… ` +
@@ -153,7 +199,7 @@ export class Brain {
     // 3. Rules → candidates; one proposal at a time, with a cooldown per rule.
     const candidates = evaluate(pos, market, d.policy).filter((c) => {
       const last = this.lastRuleAt.get(c.rule) ?? 0;
-      return Date.now() - last > 60_000;
+      return Date.now() - last > (RULE_COOLDOWN_MS[c.rule] ?? DEFAULT_COOLDOWN_MS);
     });
     if (!candidates.length) return false;
     const c = candidates.sort((a, b) => tierOf(b, d.policy) - tierOf(a, d.policy))[0];
@@ -164,12 +210,13 @@ export class Brain {
     const { d } = this;
     const tier = tierOf(c, d.policy);
     this.lastRuleAt.set(c.rule, Date.now());
+    if (c.action === "OPTIONS") return this.proposeOptions(c, evidence);
 
     // 4. Unsigned tx.
     let data: `0x${string}` = "0x";
     let to: `0x${string}` = c.sim;
     if (c.action === "REPAY_DEBT") data = repayCalldata();
-    else if (c.action === "ADD_COLLATERAL") data = supplyCalldata();
+    else if (c.action === "ADD_COLLATERAL" || c.action === "MOVE_SUPPLY") data = supplyCalldata();
     else if (c.action === "ADVISORY") to = this.ledger; // nothing to sign; tier 0 card only
     const tx = c.action === "ADVISORY"
       ? { to, value: 0n, data, nonce: 0, gas: 21_000, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
@@ -224,6 +271,32 @@ export class Brain {
       }
     }
     return true;
+  }
+
+  // The options card: venues the policy allows, ranked. Nothing is built until the wearer
+  // taps a row; then that row becomes an ordinary tier-2 proposal through propose().
+  private async proposeOptions(c: Candidate, evidence: Evidence): Promise<boolean> {
+    const { d } = this;
+    const { card, filtered } = assembleOptions(c, d.dep, d.policy, evidence);
+    for (const f of filtered) d.log(`policy_filtered ${f}`);
+    if (!card.items.length) { d.log("yield card: no venue left after the policy filter"); return false; }
+    this.setState("proposing");
+    d.log(`OPTIONS ${card.id} ${card.asset}: ${card.items.map((i) => `${i.human} ${(i.apyBps / 100).toFixed(2)}%`).join(" | ")}`);
+    if (!d.pendant.send(card)) {
+      d.log("pendant not connected; card dropped");
+      this.setState("watching");
+      return false;
+    }
+    const pick = await d.pendant.awaitPick(card.id, PROPOSAL_TTL_S * 1000);
+    if (pick.kind !== "pick") {
+      d.log(`OPTIONS ${card.id}: ${pick.kind}`);
+      this.setState("watching");
+      return pick.kind === "dismiss";
+    }
+    const chosen = pickCandidate(card, pick.idx, c);
+    if (!chosen) { d.log(`OPTIONS ${card.id}: pick ${pick.idx} is not a row`); this.setState("watching"); return false; }
+    d.log(`OPTIONS ${card.id}: picked ${pick.idx} → ${chosen.facts.best} on ${chosen.simName}`);
+    return this.propose(chosen, evidence);
   }
 
   private async record(p: Proposal, c: Candidate, decision: Decision): Promise<void> {

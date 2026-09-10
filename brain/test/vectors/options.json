@@ -1,0 +1,46 @@
+{
+  "type": "options",
+  "id": "01M24OPTIONSVECTOR000000000",
+  "kind": "yield",
+  "asset": "WETH",
+  "items": [
+    {
+      "idx": 0,
+      "protocol": "Spark",
+      "market": "Spark WETH",
+      "apyBps": 397,
+      "human": "Spark WETH",
+      "sim": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
+      "simName": "Sim-B",
+      "valueWei": "0x2386f26fc10000"
+    },
+    {
+      "idx": 1,
+      "protocol": "Compound",
+      "market": "Compound WETH",
+      "apyBps": 300,
+      "human": "Compound WETH",
+      "sim": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
+      "simName": "Sim-B",
+      "valueWei": "0x2386f26fc10000"
+    },
+    {
+      "idx": 2,
+      "protocol": "Aave",
+      "market": "Aave WETH",
+      "apyBps": 147,
+      "human": "Aave WETH",
+      "sim": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+      "simName": "Sim-A",
+      "valueWei": "0x2386f26fc10000"
+    }
+  ],
+  "footer": "mainnet data · executed on sim",
+  "evidence": {
+    "deploymentId": "QmTVumjhubXWP8MeDx5g114MRX99E4Gie5mFqVurttF99X",
+    "block": 25945312,
+    "queriedAt": 1800000000,
+    "subgraph": "Spark Lend Ethereum"
+  },
+  "expiresAt": 1800000600
+}

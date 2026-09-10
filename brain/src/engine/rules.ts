@@ -4,9 +4,10 @@
 import type { Policy } from "../config.js";
 import { debtUnitsToWei, type Position } from "../chain/positionsim.js";
 import type { MarketSnapshot } from "../data/graph/lending.js";
+import type { YieldRow } from "../data/graph/yield.js";
 
-export type Rule = "HF_LOW" | "HF_WARN" | "UTIL_SPIKE" | "REBALANCE";
-export type Action = "REPAY_DEBT" | "ADD_COLLATERAL" | "ADVISORY" | "SWAP";
+export type Rule = "HF_LOW" | "HF_WARN" | "UTIL_SPIKE" | "REBALANCE" | "YIELD_OPP";
+export type Action = "REPAY_DEBT" | "ADD_COLLATERAL" | "ADVISORY" | "SWAP" | "OPTIONS" | "MOVE_SUPPLY";
 
 export interface Candidate {
   rule: Rule;
@@ -16,11 +17,21 @@ export interface Candidate {
   valueWei: bigint; // ETH sent with the call (0 for advisories)
   debtUnits?: bigint; // sUSDC units affected, for the text
   facts: Record<string, string | number>; // exact figures the explainer must repeat verbatim
+  options?: YieldRow[]; // OPTIONS only: the ranked venues behind the card
 }
 
 export interface MarketContext {
   current?: MarketSnapshot; // the watched mainnet market (Aave WETH)
   past?: MarketSnapshot; // the same market `util_window_blocks` ago, if known
+  yield?: YieldRow[]; // ranked venues for the position's asset, only once the spread has held long enough
+}
+
+// The venue where the guarded position sits. Sim-A stands in for Aave on Sepolia.
+export const CURRENT_VENUE = "Aave";
+export const YIELD_LIQUIDITY_X = 10; // a venue must hold 10× the position to be worth listing
+
+export function positionUsd(p: Position): number {
+  return Number(p.collateralWei * p.price) / 1e26; // wei(1e18) × price(1e8) → USD
 }
 
 const WEI = 10n ** 18n;
@@ -102,6 +113,26 @@ export function evaluate(p: Position, market: MarketContext, policy: Policy): Ca
           borrowRate: (market.current.borrowRateBps / 100).toFixed(2), window: policy.util_window_blocks,
         },
       });
+    }
+  }
+
+  // Somewhere else pays more for the same asset, by more than the policy's threshold, with
+  // room to hold ten of us. The card lists the venues; the wearer picks one or none.
+  if (market.yield && market.yield.length >= 2) {
+    const best = market.yield[0];
+    const current = market.yield.find((r) => r.protocol === CURRENT_VENUE);
+    if (current && best.protocol !== CURRENT_VENUE) {
+      const delta = best.supplyRateBps - current.supplyRateBps;
+      if (delta > policy.yield_delta_bps && best.depositUSD > YIELD_LIQUIDITY_X * positionUsd(p)) {
+        out.push({
+          rule: "YIELD_OPP", action: "OPTIONS", sim: p.sim, simName: p.name, valueWei: 0n,
+          options: market.yield,
+          facts: {
+            asset: best.symbol, best: best.protocol, bestRate: (best.supplyRateBps / 100).toFixed(2),
+            current: current.protocol, curRate: (current.supplyRateBps / 100).toFixed(2), delta,
+          },
+        });
+      }
     }
   }
 

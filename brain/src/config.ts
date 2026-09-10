@@ -127,6 +127,13 @@ export function loadEnsDeployment(chainId = SEPOLIA_CHAIN_ID): EnsDeployment {
 
 export const POLICY_REFRESH_TICKS = 10;
 
+// Yield card: re-rank venues every few ticks; the spread must hold this many mainnet
+// blocks before a card goes out; a dismissed card stays quiet for an hour.
+export const YIELD_TICKS = 5;
+export const YIELD_HOLD_BLOCKS = 20;
+export const RULE_COOLDOWN_MS: Record<string, number> = { YIELD_OPP: 3_600_000 };
+export const DEFAULT_COOLDOWN_MS = 60_000;
+
 // Mainnet read-only view: the user's real position, resolved from their ENS name. Shown,
 // never acted on.
 export const MAINNET_VIEW_NAME = "ironyaditya.eth";

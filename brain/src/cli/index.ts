@@ -47,6 +47,7 @@ function parseSimulate(s?: string, dep = loadDeployments()): Simulation | undefi
   if (!s) return undefined;
   if (s.startsWith("hf=")) return { hf: Number(s.slice(3)) };
   if (s === "util_spike") return { utilSpike: true };
+  if (s === "yield") return { yield: true };
   if (s === "price_drop") { priceDrop(dep.simA, 1600_00000000n); return undefined; }
   throw new Error(`unknown --simulate ${s}`);
 }
@@ -90,13 +91,14 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
     log("policy: built-in defaults (--no-ens); nothing on the wrist will match a changed ENS record");
   }
   const mainnetView = async () => formatView(await readMainnetView(mainnet));
+  const yieldSource = () => fetchYieldTable(graph, mainnet, YIELD_ASSET);
 
   const pendant = new PendantLink();
   await pendant.listen(opts.port);
   log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)`);
   log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
   const simulate = parseSimulate(opts.simulate, dep) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
-  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, log, simulate, once: opts.once });
+  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, log, simulate, once: opts.once });
   process.on("SIGINT", () => { brain.stop(); pendant.close(); process.exit(0); });
   await brain.run();
   pendant.close();
@@ -105,7 +107,7 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
 const program = new Command().name("amulet").description("The brain behind the Amulet pendant");
 
 program.command("run").description("watch, propose, record")
-  .option("--simulate <what>", "hf=1.15 | price_drop | util_spike")
+  .option("--simulate <what>", "hf=1.15 | price_drop | util_spike | yield")
   .option("--once", "stop after the first decision")
   .option("--no-llm", "template text instead of Nova Lite")
   .option("--port <n>", "pendant port", String(PENDANT_PORT))
@@ -113,7 +115,7 @@ program.command("run").description("watch, propose, record")
   .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: o.once, ens: o.ens }));
 
 program.command("propose").description("one proposal, then exit")
-  .requiredOption("--simulate <what>", "hf=1.15 | price_drop | util_spike")
+  .requiredOption("--simulate <what>", "hf=1.15 | price_drop | util_spike | yield")
   .option("--no-llm").option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
   .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: true, ens: o.ens }));
