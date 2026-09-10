@@ -19,6 +19,7 @@ import { readPolicy, readRecords, type PolicyRead } from "../ens/resolver.js";
 import { makeStatusWriter, type StatusWriter } from "../ens/status.js";
 import { formatView, readMainnetView } from "../chain/account.js";
 import { runAttack, type AttackKind } from "../attack.js";
+import { fetchYieldTable, formatTable, YIELD_ASSET } from "../data/graph/yield.js";
 import { RESOLVER_ABI } from "../ens/abi.js";
 import { policyRecords } from "../engine/policy.js";
 import { loadSecrets, requireSecret, sealSecrets } from "../ring/keyring.js";
@@ -143,6 +144,23 @@ secrets.command("seal").argument("<plain>", "KEY=VALUE file").description("encry
 secrets.command("check").description("decrypt and list key names only").action(async () => {
   console.log(Object.keys(await loadSecrets()).join("\n"));
 });
+
+program.command("yield").description("where this asset earns the most right now: one lending query across Aave, Compound and Spark")
+  .option("--asset <symbol>", "asset to rank", YIELD_ASSET)
+  .action(async (o) => {
+    const s = await loadSecrets();
+    const graph = new GraphClient(requireSecret(s, "GRAPH_STUDIO_KEY"));
+    const mainnet = mainnetClient(requireSecret(s, "MAINNET_RPC_URL"));
+    const t = await fetchYieldTable(graph, mainnet, String(o.asset).toUpperCase());
+    console.log(`${t.asset} supply rates, mainnet head ${t.head}`);
+    for (const l of formatTable(t)) console.log(`  ${l}`);
+    if (t.rows.length >= 2) {
+      const [best, ...rest] = t.rows;
+      const cur = rest.find((r) => r.protocol === "Aave") ?? rest[0];
+      const delta = best.supplyRateBps - (cur?.supplyRateBps ?? best.supplyRateBps);
+      console.log(`  best ${best.protocol} over ${cur?.protocol}: +${delta} bps`);
+    }
+  });
 
 program.command("attack").description("play a compromised brain: push an out-of-policy proposal, or try to raise the limit on ENS")
   .option("--value <eth>", "allowed call with this much ETH attached (over the cap)")
