@@ -14,7 +14,7 @@ Health factor = collateral × price × liquidationThreshold / debt, 1e18-scaled.
 ```
 forge test
 forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast \
-  --private-key $(cat ../.secrets/sepolia-deployer) [--verify --etherscan-api-key ...]
+  --private-key $(cd ../brain && pnpm --silent amulet key deployer) [--verify --etherscan-api-key ...]
 ```
 
 Deploy writes `deployments/<chainId>.json` (addresses + pinned selectors). `deployments/11155111.json` is committed and is the single source the brain, the firmware policy vectors and the ENS `amulet.allowed` record read from.

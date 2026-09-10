@@ -166,6 +166,17 @@ program.command("yield").description("where this asset earns the most right now:
     }
   });
 
+// forge and cast want a raw key on the command line. This unseals it for exactly that, to
+// stdout only, with a warning on stderr — never paste the output anywhere.
+program.command("key").description("print a key from the ring for a one-off forge/cast run")
+  .argument("<which>", "deployer")
+  .action(async (which: string) => {
+    if (which !== "deployer") throw new Error(`unknown key ${which}`);
+    const s = await loadSecrets();
+    process.stderr.write("this is a private key: use it in this command only, never paste it\n");
+    process.stdout.write(deployerKey(s));
+  });
+
 program.command("setprice").description("testnet lever: move the sim's price so a rule fires (deployer key, from the ring)")
   .argument("<price>", "8-decimal price, e.g. 110000000000 for $1100")
   .option("--sim <b>", "simA | simB", "simA")
