@@ -68,7 +68,7 @@ async function setPrice(sim: `0x${string}`, price: bigint, rpc: string, key: Hex
   log(`  tx ${hash}`);
 }
 
-async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; clear?: boolean; agent?: string }) {
+async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; raw?: boolean; agent?: string }) {
   const s = await loadSecrets();
   const dep = loadDeployments();
   const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
@@ -107,14 +107,16 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
 
   // Typed data: the Ledger reads the intent instead of blind-signing bytes. The account holds
   // the position; this process only carries the signature and pays the gas.
+  // Typed data unless asked for the raw path: the device reading the action in words is the
+  // better default now that it works, and nothing about the policy check changes either way.
   let relayer: Relayer | undefined;
-  if (opts.clear) {
-    if (!dep.amuletAccount) throw new Error("no amuletAccount in the deployments file");
-    if (!s.BRAIN_LOG_PK) throw new Error("--clear needs BRAIN_LOG_PK to relay");
+  if (!opts.raw && dep.amuletAccount && s.BRAIN_LOG_PK) {
     relayer = makeRelayer(rpc, s.BRAIN_LOG_PK as `0x${string}`);
     const [n, bal] = await Promise.all([accountNonce(sepolia, dep.amuletAccount), accountBalance(sepolia, dep.amuletAccount)]);
     log(`clear signing on: account ${dep.amuletAccount} nonce ${n} balance ${Number(bal) / 1e18} ETH, relayed by ${relayer.address}`);
     log("the Nano X needs \"Verbose EIP712\" on in the Ethereum app, or it shows the domain and a hash");
+  } else if (opts.raw) {
+    log("raw transactions: the Nano X will blind-sign the calldata");
   }
 
   const pendant = new PendantLink();
@@ -136,17 +138,17 @@ program.command("run").description("watch, propose, record")
   .option("--no-llm", "template text instead of Nova Lite")
   .option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
-  .option("--clear", "typed-data signing: the Ledger shows the action in words")
+  .option("--raw", "blind-sign a transaction instead of a typed-data intent")
   .option("--agent <name>", "which named agent to run as", DEFAULT_AGENT)
-  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: o.once, ens: o.ens, clear: o.clear, agent: o.agent }));
+  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: o.once, ens: o.ens, raw: o.raw, agent: o.agent }));
 
 program.command("propose").description("one proposal, then exit")
   .requiredOption("--simulate <what>", "hf=1.15 | price_drop | util_spike | yield")
   .option("--no-llm").option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
-  .option("--clear", "typed-data signing: the Ledger shows the action in words")
+  .option("--raw", "blind-sign a transaction instead of a typed-data intent")
   .option("--agent <name>", "which named agent to run as", DEFAULT_AGENT)
-  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: true, ens: o.ens, clear: o.clear, agent: o.agent }));
+  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: true, ens: o.ens, raw: o.raw, agent: o.agent }));
 
 program.command("stale").description("pin a wrong deployment so the freshness gate trips")
   .requiredOption("--deployment <Qm>").option("--port <n>", "pendant port", String(PENDANT_PORT))

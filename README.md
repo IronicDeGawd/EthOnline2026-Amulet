@@ -147,10 +147,10 @@ pays the gas. It can refuse to send it; it cannot alter a word of it, and the ac
 kills the signature after one use. The owner can always sweep the balance back out.
 
 The Nano X needs **Verbose EIP712** on in the Ethereum app; otherwise it shows the domain and a
-hash. The raw-transaction path still works and is what runs without `--clear`.
+hash. Typed data is the default whenever the account and a relayer are configured; `--raw` puts the old blind-signed transaction back for comparison.
 
 ```
-pnpm amulet run --clear                 # the loop, signing intents
+pnpm amulet run                         # the loop; typed data whenever the account is there
 pnpm amulet intent Supply 0.01          # one hand-made intent
 ```
 

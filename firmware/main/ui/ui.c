@@ -144,6 +144,9 @@ typedef struct {
 static hold_t s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts, s_hold_agent;
 static uint32_t s_shown_at, s_press_at;
 static bool s_press_counts, s_hold_view;
+// Set the moment a hold completes. The arc and its "…ing" word then stay on screen until the
+// next one loads, instead of springing back to "Hold to sign" while the Ledger is being found.
+static bool s_hold_done;
 
 // The hold always runs on a proposal. Armed, it signs; unarmed, it goes and finds the
 // Ledger (pairing it if needed) and comes back here. The wearer never has to leave.
@@ -165,8 +168,9 @@ static void holding_view(bool on)
 
 static void hold_end(hold_t *h)
 {
-    if (s_hold_view) h->view(false);
-    s_press_counts = s_hold_view = false;
+    if (s_hold_view && !s_hold_done) h->view(false);
+    s_press_counts = false;
+    if (!s_hold_done) s_hold_view = false;
 }
 
 static lv_point_t s_press_pt;
@@ -208,7 +212,7 @@ static void hold_event(lv_event_t *e)
         uint32_t held = now - s_press_at;
         if (!s_hold_view && held >= HOLD_SHOW_MS) { s_hold_view = true; lv_arc_set_value(h->arc, 0); h->view(true); }
         if (s_hold_view) lv_arc_set_value(h->arc, held >= HOLD_MS ? 100 : (int)(held * 100 / HOLD_MS));
-        if (held >= HOLD_MS) { s_press_counts = false; s_confirm = true; ESP_LOGI(TAG, "hold confirmed"); }
+        if (held >= HOLD_MS) { s_press_counts = false; s_hold_done = true; s_confirm = true; ESP_LOGI(TAG, "hold confirmed"); }
         return;
     }
     if (code == LV_EVENT_GESTURE) { swiped(h, lv_indev_get_gesture_dir(lv_indev_active())); return; }
@@ -675,7 +679,7 @@ void ui_show_options(const amulet_options_t *o)
         show(s_o_row[i], on);
     }
     lv_label_set_text(s_o_footer, o->footer[0] ? o->footer : "mainnet data, sim run");
-    s_press_counts = false;
+    s_press_counts = s_hold_done = s_hold_view = false;
     s_shown_at = lv_tick_get();
     s_confirm = s_reject = false;
     display_backlight(100);
@@ -720,6 +724,7 @@ static void go(ui_state_t st)
 {
     if (!display_ready() || !s_scr[st]) { s_state = st; return; }
     if (!lvgl_port_lock(0)) return;
+    s_hold_done = s_hold_view = false;
     lv_screen_load(s_scr[st]);
     s_state = st;
     lvgl_port_unlock();
@@ -838,7 +843,7 @@ void ui_show_proposal(const amulet_proposal_t *p)
     }
     show(s_d_sheet, false);
 
-    s_press_counts = false;
+    s_press_counts = s_hold_done = s_hold_view = false;
     s_shown_at = lv_tick_get();
     s_confirm = s_reject = false;
     display_backlight(100);
@@ -981,7 +986,7 @@ void ui_show_agent(const agent_t *a)
     paint_face(NULL, a, FACE_BIG_PX / FACE_PX, (240 - FACE_BIG_PX) / 2, 42);
     lv_label_set_text(s_ag_name, a ? a->label : "unknown agent");
     show(s_ag_hint, true);
-    s_press_counts = false;
+    s_press_counts = s_hold_done = s_hold_view = false;
     s_shown_at = lv_tick_get();
     s_confirm = s_reject = false;
     display_backlight(100);
