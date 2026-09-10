@@ -4,6 +4,7 @@
 #include "ui.h"
 #include "display.h"
 #include "assets.h"
+#include "amulet_config.h"
 #include <string.h>
 #include <stdio.h>
 #include <ctype.h>
@@ -23,7 +24,7 @@ static ui_state_t s_state = UI_HOME;
 static bool s_confirm, s_reject, s_armed;
 static ui_status_t s_status;
 
-static lv_obj_t *s_scr[UI_OPTIONS + 1];
+static lv_obj_t *s_scr[UI_AGENT + 1];
 
 // OPTIONS (yield card)
 static lv_obj_t *s_o_title, *s_o_row[3], *s_o_name[3], *s_o_rate[3], *s_o_footer, *s_o_arc;
@@ -37,8 +38,9 @@ static lv_obj_t *s_bat_body, *s_bat_fill, *s_bat_tip, *s_bat_text;
 // The agent's face: the 16x16 drawing from its ENS record, doubled to 32x32 and kept as an
 // alpha mask so LVGL paints it in the agent's own colour.
 #define FACE_DRAW_PX 32
-static uint8_t s_face_buf[FACE_DRAW_PX * FACE_DRAW_PX * 4];   // ARGB8888, drawn pixel by pixel
-static lv_obj_t *s_p_face;
+#define FACE_BIG_PX  64                     // the 16x16 drawing, four times over
+static lv_obj_t *s_ag_name, *s_ag_parent, *s_ag_hint, *s_ag_arc;
+static bool s_tap;
 static char s_agent_label[AGENT_LABEL_LEN];
 
 static lv_obj_t *s_p_bg, *s_p_plane, *s_p_verb, *s_p_amount, *s_p_unit, *s_p_pill, *s_p_pill_text;
@@ -139,7 +141,7 @@ typedef struct {
     void (*on_tap)(const lv_point_t *at);   // a short press with no drag; NULL = ignored
 } hold_t;
 #define TAP_MS 350             // released within this, without a drag, is a tap
-static hold_t s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts;
+static hold_t s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts, s_hold_agent;
 static uint32_t s_shown_at, s_press_at;
 static bool s_press_counts, s_hold_view;
 
@@ -330,11 +332,6 @@ static void build_proposal(void)
 
     // tier 1/2 stack
     s_p_plane  = image(s, &ic_plane, 106, 18);
-    s_p_face = lv_canvas_create(s);
-    lv_canvas_set_buffer(s_p_face, s_face_buf, FACE_DRAW_PX, FACE_DRAW_PX, LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_pos(s_p_face, 104, 14);
-    lv_canvas_fill_bg(s_p_face, lv_color_black(), LV_OPA_TRANSP);
-    show(s_p_face, false);
     s_p_verb   = text(s, &manrope_600_19, C_TEXT, 46,  "");
     s_p_amount = text(s, &manrope_800_52, C_TEXT, 64,  "");
     s_p_unit   = text(s, &manrope_700_16, C_TEXT, 122, "");
@@ -617,6 +614,7 @@ static void build_photo(void)
 }
 
 static void go(ui_state_t st);
+static void build_agent(void);
 
 // OPTIONS: a yield card. Three rows the brain ranked, each a venue for the same asset; the
 // wearer taps one (the brain then sends a normal proposal) or swipes it away. No hold here:
@@ -711,7 +709,7 @@ void ui_init(void)
     if (!display_ready()) { ESP_LOGW(TAG, "no panel - UI disabled, signing runs headless"); return; }
     if (!lvgl_port_lock(0)) return;
     build_home(); build_proposal(); build_wait(); build_result(); build_blocked(); build_idle();
-    build_photo(); build_pairing(); build_ledger(); build_options();
+    build_photo(); build_pairing(); build_ledger(); build_options(); build_agent();
     lv_screen_load(s_scr[UI_HOME]);
     s_state = UI_HOME;
     lvgl_port_unlock();
@@ -795,7 +793,7 @@ void ui_show_proposal(const amulet_proposal_t *p)
     bool split = split_human(p->human, verb, sizeof verb, amount, sizeof amount, unit, sizeof unit);
 
     // tier 1/2
-    show(s_p_plane, !advisory && !s_agent_label[0]); show(s_p_face, !advisory && s_agent_label[0]);
+    show(s_p_plane, !advisory);
     show(s_p_verb, !advisory); show(s_p_amount, !advisory); show(s_p_unit, !advisory); show(s_p_pill, !advisory);
     // tier 0
     show(s_a_badge, advisory); show(s_a_label, advisory); show(s_a_amount, advisory); show(s_a_unit, advisory); show(s_a_detail, advisory); show(s_a_hint, advisory);
@@ -923,29 +921,79 @@ void ui_show_dismissed(bool advisory)
 }
 
 // The pendant's own no: the proposal broke the ENS policy, so the Ledger never saw it.
-void ui_set_agent(const agent_t *a)
+// The face is drawn as plain rectangles, one per run of ink across a row. A 16x16 drawing
+// needs about forty of them, which is cheaper than it sounds and needs no image format to
+// agree with the panel.
+#define FACE_RUNS 96
+static lv_obj_t *s_face_run[FACE_RUNS];
+
+static void paint_face(lv_obj_t *parent, const agent_t *a, int px, int x0, int y0)
 {
-    s_agent_label[0] = 0;
-    if (!display_ready() || !s_p_face || !lvgl_port_lock(0)) return;
-    bool have = a && a->has_face;
-    if (have) {
-        snprintf(s_agent_label, sizeof s_agent_label, "%s", a->label);
-        lv_canvas_fill_bg(s_p_face, lv_color_black(), LV_OPA_TRANSP);
-        lv_color_t ink = lv_color_hex(a->colour);
-        for (int y = 0; y < FACE_DRAW_PX; y++) {
-            for (int x = 0; x < FACE_DRAW_PX; x++) {
-                int sy = y / 2, sx = x / 2;            // each drawn pixel is two on the panel
-                if (a->face[sy * 2 + (sx >> 3)] & (0x80 >> (sx & 7)))
-                    lv_canvas_set_px(s_p_face, x, y, ink, LV_OPA_COVER);
+    int n = 0;
+    if (a && a->has_face) {
+        for (int y = 0; y < FACE_PX && n < FACE_RUNS; y++) {
+            int x = 0;
+            while (x < FACE_PX && n < FACE_RUNS) {
+                bool ink = a->face[y * 2 + (x >> 3)] & (0x80 >> (x & 7));
+                if (!ink) { x++; continue; }
+                int w = 1;
+                while (x + w < FACE_PX && (a->face[y * 2 + ((x + w) >> 3)] & (0x80 >> ((x + w) & 7)))) w++;
+                lv_obj_t *r = s_face_run[n++];
+                lv_obj_set_size(r, w * px, px);
+                lv_obj_set_pos(r, x0 + x * px, y0 + y * px);
+                lv_obj_set_style_bg_color(r, lv_color_hex(a->colour), LV_PART_MAIN);
+                show(r, true);
+                x += w;
             }
         }
-        ESP_LOGI(TAG, "face for %s in #%06x", a->label, (unsigned)a->colour);
     }
-    // The agent's face stands where the paper plane does, so the icon that says a proposal
-    // arrived is the face of whoever sent it.
-    show(s_p_face, have);
-    show(s_p_plane, !have);
+    for (int i = n; i < FACE_RUNS; i++) show(s_face_run[i], false);
+    (void)parent;
+}
+
+static void agent_tap(const lv_point_t *at) { (void)at; s_tap = true; }
+
+bool ui_take_tap(void) { bool t = s_tap; s_tap = false; return t; }
+
+static void build_agent(void)
+{
+    lv_obj_t *s = s_scr[UI_AGENT] = screen(&bg_base, NULL);
+    for (int i = 0; i < FACE_RUNS; i++) {
+        s_face_run[i] = lv_obj_create(s);
+        lv_obj_remove_style_all(s_face_run[i]);
+        lv_obj_set_style_bg_opa(s_face_run[i], LV_OPA_COVER, LV_PART_MAIN);
+        show(s_face_run[i], false);
+    }
+    s_ag_name   = text(s, &manrope_700_20, C_TEXT,  116, "");
+    s_ag_parent = text(s, &manrope_500_13, C_MUTED, 144, AMULET_ENS_PARENT);
+    s_ag_hint   = text(s, &manrope_500_13, C_MUTED, 178, "Tap to see the request");
+    s_ag_arc = rim_arc(s);
+    s_hold_agent = (hold_t){ .arc = s_ag_arc, .view = options_view, .armed = never_armed, .on_tap = agent_tap };
+    touch_layer(s, &s_hold_agent);
+}
+
+// Who is asking, before what they want. A swipe here dismisses without the amount ever
+// being shown.
+void ui_show_agent(const agent_t *a)
+{
+    s_tap = false;
+    if (!display_ready() || !s_ag_name || !lvgl_port_lock(200)) { s_state = UI_AGENT; return; }
+    paint_face(NULL, a, FACE_BIG_PX / FACE_PX, (240 - FACE_BIG_PX) / 2, 42);
+    lv_label_set_text(s_ag_name, a ? a->label : "unknown agent");
+    show(s_ag_hint, true);
+    s_press_counts = false;
+    s_shown_at = lv_tick_get();
+    s_confirm = s_reject = false;
+    display_backlight(100);
+    lv_screen_load(s_scr[UI_AGENT]);
+    s_state = UI_AGENT;
     lvgl_port_unlock();
+}
+
+// Remembers who is asking, for the detail sheet's line.
+void ui_set_agent(const agent_t *a)
+{
+    snprintf(s_agent_label, sizeof s_agent_label, "%s", a ? a->label : "");
 }
 
 void ui_show_policy_reject(const char *reason)

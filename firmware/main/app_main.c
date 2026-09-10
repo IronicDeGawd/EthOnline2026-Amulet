@@ -633,6 +633,18 @@ void app_main(void)
                 ui_show_options(&s_options);
             }
         }
+        if (ui_state() == UI_AGENT) {
+            if (ui_take_tap()) {
+                ui_show_proposal(&s_pending);
+            } else if (ui_take_reject()) {
+                send_decision(s_pending.id, "rejected", NULL);
+                ui_show_dismissed(false);
+                s_have_pending = false;
+                vTaskDelay(pdMS_TO_TICKS(1800));
+                ui_show_home();
+            }
+        }
+
         if (ui_state() == UI_OPTIONS) {
             int idx;
             char msg[128];
@@ -656,7 +668,7 @@ void app_main(void)
             }
         }
 
-        if (take_pending_flag() && ui_state() != UI_PROPOSAL) {
+        if (take_pending_flag() && ui_state() != UI_PROPOSAL && ui_state() != UI_AGENT) {
             // Policy first. Out of policy: answer the brain, show why, never arm — the
             // Ledger never sees it.
             char reason[POLICY_REASON_LEN];
@@ -673,9 +685,12 @@ void app_main(void)
                 vTaskDelay(pdMS_TO_TICKS(3000));
                 ui_show_home();
             } else {
+                // Who is asking comes first. The amount is not on screen until the wearer
+                // has seen the face and tapped through.
                 ui_set_agent(ag);
                 ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
-                ui_show_proposal(&s_pending);
+                if (ag && ag->has_face) ui_show_agent(ag);
+                else ui_show_proposal(&s_pending);
             }
         }
 

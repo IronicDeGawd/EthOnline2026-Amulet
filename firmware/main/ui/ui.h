@@ -17,6 +17,7 @@ typedef enum {
     UI_PAIRING,       // first-time Ledger pairing: compare the code, hold to accept
     UI_LEDGER,        // swipe right from HOME: pair / paired / removed
     UI_OPTIONS,       // a yield card: up to three venues, tap one, swipe to dismiss
+    UI_AGENT,         // who is asking: the agent's face and name, tap to see what they want
 } ui_state_t;
 
 typedef enum { UI_PAIR_NONE, UI_PAIR_PAIRED, UI_PAIR_REMOVED } ui_pair_t;
@@ -43,6 +44,11 @@ void ui_show_policy_reject(const char *reason);   // the pendant refused it befo
 // Whose proposal is coming: the agent's face replaces the icon at the top of the proposal
 // screen, so you see who is asking before you read what they want. NULL restores the default.
 void ui_set_agent(const agent_t *a);
+// Who is asking, before what they are asking for: the agent's face large, its ENS name under
+// it, and a tap to go on to the request. A swipe here dismisses without ever showing the
+// amount, which is the point — you decide about the agent first.
+void ui_show_agent(const agent_t *a);
+bool ui_take_tap(void);   // true once per tap on the agent screen
 void ui_show_options(const amulet_options_t *o);  // yield card: tap a row to pick, swipe to dismiss
 bool ui_take_pick(int *idx);                       // true once per tapped row
 void ui_show_picked(const char *venue);            // "Picked · Spark WETH", the agent is building the proposal             // after a swipe: "Declined" / "Dismissed"
