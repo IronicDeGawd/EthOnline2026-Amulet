@@ -51,7 +51,7 @@ Amulet makes the human-in-the-loop a **physical object with one job**. Roughly 1
 
 | Sponsor | Role | Where |
 |---|---|---|
-| **Ledger** | Pendant implements the Ledger BLE APDU transport natively on ESP32-S3 and drives the Ethereum app (`GET PUBLIC KEY`, `SIGN TX`). Brain secrets are encrypted under the Ledger Key Ring (`wallet-cli ring`) and decrypted at boot on a host with no USB. The Ledger account is the only one that can edit the agent's policy. | `firmware/main/ledger/`, `brain/src/secrets/`, `docs/LEDGER_FEEDBACK.md` |
+| **Ledger** | Pendant implements the Ledger BLE APDU transport natively on ESP32-S3 and drives the Ethereum app (`GET PUBLIC KEY`, `SIGN TX`, and the EIP-712 typed-data commands so the device reads the action in words instead of blind-signing bytes). Brain secrets are encrypted under the Ledger Key Ring (`wallet-cli ring`) and decrypted at boot on a host with no USB. The Ledger account is the only one that can edit the agent's policy. | `firmware/main/ledger/`, `contracts/src/AmuletAccount.sol`, `docs/LEDGER_FEEDBACK.md` |
 | **The Graph** | Messari standardized lending subgraphs supply live market conditions; one query shape runs against three pinned deployments (Aave v3, Compound v3, Spark) to rank an asset's supply rate across protocols; Substreams is the agent's clock (one tick per block); a custom subgraph on Subgraph Studio indexes the agent's own actions. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | `brain/src/data/graph/`, `subgraph/` |
 | **ENS** | The agent lives at `guardian.<you>.eth` on ENSv2 Sepolia. Its policy (allowed contracts, max value, thresholds) is text records on a permissioned resolver. Enhanced Access Control gives the Ledger the policy-admin role and the brain a status-only role. The brain cannot raise its own limits. Revoking the subname is the kill switch. | `firmware/main/ens/`, `brain/src/ens/` |
 
@@ -72,6 +72,42 @@ pnpm amulet ens show                      # records as any wallet reads them, pl
 pnpm amulet ens set max_value_wei 2e16    # lower the cap (Ledger role); brain and pendant follow
 pnpm amulet attack --value 5              # compromised brain: pendant answers policy_reject
 pnpm amulet attack --raise-limit          # hot key tries to edit the policy: reverts
+```
+
+## What the Ledger actually reads
+
+A hardware wallet can only describe a contract call if someone published a descriptor for that
+contract, and only Ledger can sign one — for mainnet addresses. A hackathon contract on Sepolia
+will never have one, so a raw call is signed blind: the device shows bytes and asks you to trust
+the screen that sent them.
+
+Typed data is the door Ledger leaves open. The device lays out an EIP-712 message from the
+message itself, with nothing registered anywhere. So Amulet holds its position in a small
+account contract (`AmuletAccount`) and the pendant sends the Nano X an intent instead of a
+transaction:
+
+```
+Amulet · chain 11155111 · verifyingContract 0x23cf…8253
+summary   Supply 0.01 ETH on Sim-A
+action    Supply
+market    0x9A6c…467c
+amount    10000000000000000
+nonce     0
+deadline  1757501234
+```
+
+The wearer reads that on the device and presses the button. The **summary is inside the signed
+message**, so the sentence on the screen is the sentence that executes — nothing downstream can
+swap "Repay 0.006" for "Repay 5" after it was approved. The agent then relays the signature and
+pays the gas. It can refuse to send it; it cannot alter a word of it, and the account's nonce
+kills the signature after one use. The owner can always sweep the balance back out.
+
+The Nano X needs **Verbose EIP712** on in the Ethereum app; otherwise it shows the domain and a
+hash. The raw-transaction path still works and is what runs without `--clear`.
+
+```
+pnpm amulet run --clear                 # the loop, signing intents
+pnpm amulet intent Supply 0.01          # one hand-made intent
 ```
 
 ## Yield opportunities
