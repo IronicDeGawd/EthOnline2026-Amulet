@@ -70,7 +70,7 @@ Records (`amulet.version chain allowed max_value_wei max_token_usd tier1_hf tier
 ```
 pnpm amulet ens show                      # records as any wallet reads them, plus who may edit what
 pnpm amulet ens set max_value_wei 2e16    # lower the cap (Ledger role); brain and pendant follow
-pnpm amulet attack --value 5              # compromised brain: pendant answers policy_reject
+pnpm amulet attack --value 5              # a request that reads fine; the pendant refuses it anyway
 pnpm amulet attack --raise-limit          # hot key tries to edit the policy: reverts
 ```
 
