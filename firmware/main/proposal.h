@@ -12,6 +12,20 @@
 #define PROP_ACTION_LEN    24
 #define PROP_DATA_MAX      512   // calldata bytes
 
+// A typed-data intent. When present the pendant signs THIS on the Ledger instead of a raw
+// transaction, so the device shows the summary and the figures instead of blind bytes. The
+// summary is part of the signed message: what the screen says is what executes.
+typedef struct {
+    bool     present;
+    char     summary[PROP_TEXT_LEN];
+    char     action[16];          // Supply | Repay | Withdraw | Borrow
+    uint8_t  market[20];
+    uint8_t  amount[32];
+    uint8_t  nonce[32];
+    uint8_t  deadline[32];
+    uint8_t  account[20];         // the AmuletAccount that verifies the signature
+} amulet_intent_t;
+
 typedef struct {
     char     id[PROP_ID_LEN];
     uint8_t  tier;                       // 0 advisory, 1 small pre-approved, 2 full
@@ -32,6 +46,7 @@ typedef struct {
     char     deployment_id[PROP_TEXT_LEN];   // which subgraph deployment the evidence came from
     uint64_t evidence_block;
     int64_t  expires_at;                     // unix seconds; 0 = no expiry given
+    amulet_intent_t intent;
 } amulet_proposal_t;
 
 // Parses one JSON message. Returns true only for a well-formed proposal: every tx field

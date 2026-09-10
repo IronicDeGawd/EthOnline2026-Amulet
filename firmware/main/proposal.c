@@ -103,6 +103,26 @@ bool proposal_parse(const char *json, size_t len, amulet_proposal_t *out, char *
     uint64_t exp = 0;
     if (u64_field(root, "expiresAt", &exp)) out->expires_at = (int64_t)exp;
 
+    // The typed-data intent, when the brain sends one. Everything here is signed together,
+    // so a missing or malformed field means no intent at all rather than a partial one.
+    const cJSON *in = cJSON_GetObjectItemCaseSensitive(root, "intent");
+    if (cJSON_IsObject(in)) {
+        amulet_intent_t *t = &out->intent;
+        const cJSON *acc = cJSON_GetObjectItemCaseSensitive(in, "account");
+        const cJSON *mkt = cJSON_GetObjectItemCaseSensitive(in, "market");
+        if (str_field(in, "summary", t->summary, sizeof t->summary)
+            && str_field(in, "action", t->action, sizeof t->action)
+            && cJSON_IsString(acc) && hex_to_bytes(acc->valuestring, t->account, 20)
+            && cJSON_IsString(mkt) && hex_to_bytes(mkt->valuestring, t->market, 20)
+            && u256_field(in, "amount", t->amount)
+            && u256_field(in, "nonce", t->nonce)
+            && u256_field(in, "deadline", t->deadline)) {
+            t->present = true;
+        } else {
+            FAIL("intent is incomplete");
+        }
+    }
+
     // A plain transfer is fully readable from the transaction itself, so the screen shows
     // what will be signed, not what the brain claims. Contract calls keep the brain's words
     // until the policy layer can decode them.

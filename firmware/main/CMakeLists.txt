@@ -1,7 +1,7 @@
 file(GLOB ASSET_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/assets/*.c")
 
 idf_component_register(
-    SRCS ${ASSET_SRCS} "app_main.c" "net/wifi.c" "net/ws.c" "ledger/ble_transport.c" "ledger/apdu_eth.c"
+    SRCS ${ASSET_SRCS} "app_main.c" "net/wifi.c" "net/ws.c" "ledger/ble_transport.c" "ledger/apdu_eth.c" "ledger/eip712.c"
          "crypto/keccak.c" "crypto/rlp.c" "crypto/tx.c" "rpc/rpc.c" "display/display.c" "proposal.c" "ui/ui.c" "power/battery.c"
          "policy/policy.c" "ens/ens.c"
     INCLUDE_DIRS "." "net" "ledger" "crypto" "rpc" "display" "ui" "assets" "power" "policy" "ens"
