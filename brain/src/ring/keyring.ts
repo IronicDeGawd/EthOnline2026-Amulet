@@ -6,6 +6,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { REPO_ROOT } from "../config.js";
+import type { Hex } from "viem";
 
 export const RING_KEY = "amulet-brain";
 export const SECRETS_ENC = resolve(REPO_ROOT, "brain", "secrets.enc");
@@ -102,6 +103,19 @@ export async function sealSecrets(plainFile: string, out = SECRETS_ENC): Promise
   parseKv(readFileSync(plainFile, "utf8")); // validates shape before touching the ring
   rmSync(out, { force: true });
   await ringToFile(["encrypt", "-i", plainFile, "--key", RING_KEY], out);
+}
+
+// The Sepolia deployer key. It lives inside the Key Ring like everything else, so no key
+// that can move funds sits in a file on this machine. The old plaintext at
+// .secrets/sepolia-deployer is still read as a fallback and warned about once, so a machine
+// that has not been re-sealed yet keeps working.
+export function deployerKey(s: Secrets, log: (l: string) => void = () => {}): Hex {
+  const sealed = s.SEPOLIA_DEPLOYER_PK;
+  if (sealed) return sealed as Hex;
+  const file = resolve(REPO_ROOT, ".secrets", "sepolia-deployer");
+  if (!existsSync(file)) throw new Error("no deployer key: add SEPOLIA_DEPLOYER_PK to the sealed secrets");
+  log(`deployer key read from ${file} in the clear — seal it as SEPOLIA_DEPLOYER_PK and delete the file`);
+  return readFileSync(file, "utf8").trim() as Hex;
 }
 
 export function requireSecret(s: Secrets, k: string): string {

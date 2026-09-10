@@ -36,8 +36,7 @@ export interface Signer {
   wallet: ReturnType<typeof createWalletClient>;
 }
 
-export function deployerSigner(rpcUrl: string): Signer {
-  const pk = readFileSync(resolve(REPO_ROOT, ".secrets", "sepolia-deployer"), "utf8").trim() as Hex;
+export function deployerSigner(rpcUrl: string, pk: Hex): Signer {
   return signerFromKey(rpcUrl, pk);
 }
 

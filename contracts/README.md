@@ -19,4 +19,4 @@ forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC --broadcast \
 
 Deploy writes `deployments/<chainId>.json` (addresses + pinned selectors). `deployments/11155111.json` is committed and is the single source the brain, the firmware policy vectors and the ENS `amulet.allowed` record read from.
 
-Demo lever: `cast send $SIM_A "setPrice(uint256)" 160000000000 --private-key $(cat ../.secrets/sepolia-deployer) --rpc-url $SEPOLIA_RPC`
+Demo lever: `pnpm amulet setprice 160000000000` from `brain/` (deployer key comes from the Ledger Key Ring, never a file).

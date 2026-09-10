@@ -7,13 +7,12 @@
 //   amulet secrets seal <plain.txt>         (encrypt with the Ledger Key Ring)
 //   amulet keygen                           (fresh hot key for AmuletLog, printed once)
 import { Command } from "commander";
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { networkInterfaces } from "node:os";
-import { isAddress } from "viem";
+import { resolve } from "node:path";
+import { isAddress, parseAbi, type Hex } from "viem";
+import { sepolia as sepoliaChain } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { ENS, LEDGER_ADDRESS, PENDANT_PORT, POLICY_KEYS, POLICY_NAME, REPO_ROOT, STATUS_KEYS, loadDeployments, loadEnsDeployment } from "../config.js";
+import { ENS, LEDGER_ADDRESS, PENDANT_PORT, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, loadDeployments, loadEnsDeployment, type Deployments } from "../config.js";
 import { deployerSigner, ensSetup, revertReason, signerFromKey, writeRecords } from "../ens/setup.js";
 import { readPolicy, readRecords, type PolicyRead } from "../ens/resolver.js";
 import { makeStatusWriter, type StatusWriter } from "../ens/status.js";
@@ -22,7 +21,7 @@ import { runAttack, type AttackKind } from "../attack.js";
 import { fetchYieldTable, formatTable, YIELD_ASSET } from "../data/graph/yield.js";
 import { RESOLVER_ABI } from "../ens/abi.js";
 import { policyRecords } from "../engine/policy.js";
-import { loadSecrets, requireSecret, sealSecrets } from "../ring/keyring.js";
+import { deployerKey, loadSecrets, requireSecret, sealSecrets } from "../ring/keyring.js";
 import { GraphClient } from "../data/graph/client.js";
 import { fetchLending, pickMarket } from "../data/graph/lending.js";
 import { checkFreshness } from "../data/graph/freshness.js";
@@ -43,23 +42,26 @@ function lanIp(): string {
   return "127.0.0.1";
 }
 
-function parseSimulate(s?: string, dep = loadDeployments()): Simulation | undefined {
+async function parseSimulate(s: string | undefined, dep: Deployments, rpc: string, key: Hex): Promise<Simulation | undefined> {
   if (!s) return undefined;
   if (s.startsWith("hf=")) return { hf: Number(s.slice(3)) };
   if (s === "util_spike") return { utilSpike: true };
   if (s === "yield") return { yield: true };
-  if (s === "price_drop") { priceDrop(dep.simA, 1600_00000000n); return undefined; }
+  if (s === "price_drop") { await setPrice(dep.simA, 1600_00000000n, rpc, key); return undefined; }
   throw new Error(`unknown --simulate ${s}`);
 }
 
-// Testnet lever, not a brain secret: setPrice from the deployer key so the real HF drops.
-function priceDrop(sim: string, price: bigint): void {
-  const keyFile = resolve(REPO_ROOT, ".secrets", "sepolia-deployer");
-  const key = readFileSync(keyFile, "utf8").trim();
-  const rpc = process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com";
+// Testnet lever, not a brain secret: setPrice so the real HF drops. Signed in process with
+// the sealed deployer key, never handed to another program on a command line.
+async function setPrice(sim: `0x${string}`, price: bigint, rpc: string, key: Hex): Promise<void> {
+  const signer = signerFromKey(rpc, key);
   log(`setPrice(${price}) on ${sim} from the deployer key`);
-  const out = execFileSync("cast", ["send", sim, "setPrice(uint256)", price.toString(), "--private-key", key, "--rpc-url", rpc, "--json"], { encoding: "utf8" });
-  log(`  tx ${JSON.parse(out).transactionHash}`);
+  const hash = await signer.wallet.writeContract({
+    address: sim, abi: parseAbi(["function setPrice(uint256)"]), functionName: "setPrice", args: [price],
+    account: signer.account, chain: sepoliaChain,
+  });
+  await signer.pub.waitForTransactionReceipt({ hash });
+  log(`  tx ${hash}`);
 }
 
 async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean }) {
@@ -97,7 +99,7 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   await pendant.listen(opts.port);
   log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)`);
   log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
-  const simulate = parseSimulate(opts.simulate, dep) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
+  const simulate = (await parseSimulate(opts.simulate, dep, rpc, deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
   const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, log, simulate, once: opts.once });
   process.on("SIGINT", () => { brain.stop(); pendant.close(); process.exit(0); });
   await brain.run();
@@ -164,6 +166,17 @@ program.command("yield").description("where this asset earns the most right now:
     }
   });
 
+program.command("setprice").description("testnet lever: move the sim's price so a rule fires (deployer key, from the ring)")
+  .argument("<price>", "8-decimal price, e.g. 110000000000 for $1100")
+  .option("--sim <b>", "simA | simB", "simA")
+  .action(async (price: string, o) => {
+    if (!/^\d+$/.test(price)) throw new Error(`${price} is not a price`);
+    const s = await loadSecrets();
+    const dep = loadDeployments();
+    const sim = o.sim === "simB" ? dep.simB : dep.simA;
+    await setPrice(sim, BigInt(price), requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log));
+  });
+
 program.command("attack").description("play a compromised brain: push an out-of-policy proposal, or try to raise the limit on ENS")
   .option("--value <eth>", "allowed call with this much ETH attached (over the cap)")
   .option("--target <addr>", "plain transfer to an address the policy never listed")
@@ -222,7 +235,7 @@ ens.command("setup").description("register the name, deploy resolver + subregist
       "amulet.endpoint": o.endpoint as string,
       "amulet.status": "offline",
     };
-    const signer = deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL"));
+    const signer = deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log));
     log(`deployer ${signer.account.address}, brain ${brain}, ledger ${LEDGER_ADDRESS}`);
     const out = await ensSetup(signer, { brain, records, noSubregistry: !o.subregistry, log });
     log(`${out.name} → resolver ${out.resolver}${out.subregistry ? `, subregistry ${out.subregistry}` : ""}`);
@@ -238,7 +251,7 @@ ens.command("set").description("edit one policy record (deployer standing in for
     const s = await loadSecrets();
     const d = loadEnsDeployment();
     const k = key.startsWith("amulet.") ? key : `amulet.${key}`;
-    await writeRecords(deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL")), d.resolver, { [k]: value }, log);
+    await writeRecords(deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log)), d.resolver, { [k]: value }, log);
   });
 ens.command("status").description("write amulet.status (or --key) with the brain hot key; anything but its two records reverts")
   .argument("<value>").option("--key <k>", "record", "amulet.status")
