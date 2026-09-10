@@ -197,6 +197,12 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
     } else {
       expiry = Number(existing);
       st.childRegistered = true; saveState(st);
+      // A lapsed name stops resolving; a re-run renews it rather than reporting success.
+      const now = Number((await s.pub.getBlock()).timestamp);
+      if (expiry <= now + 86_400) {
+        expiry = now + CHILD_TTL_S;
+        await send(s, log, `renew ${POLICY_NAME} (was ${existing === 0n ? "unset" : "expired or expiring"})`, { ...reg, functionName: "renew", args: [childId, BigInt(expiry)] });
+      }
     }
     const ledgerRenews = await s.pub.readContract({ ...reg, functionName: "hasRoles", args: [childId, RR.RENEW, ledger] });
     if (!ledgerRenews) await send(s, log, "grant RENEW on guardian to the Ledger", { ...reg, functionName: "grantRoles", args: [childId, RR.RENEW, ledger] });

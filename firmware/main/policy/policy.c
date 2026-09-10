@@ -104,6 +104,7 @@ bool policy_parse(policy_t *p, const char *version, const char *chain, const cha
     if (!policy_dec_to_be32(max_value_wei, p->max_value_wei)) return false;
     if (!parse_x100(tier1_hf, &p->tier1_hf_x100)) p->tier1_hf_x100 = 140;
     if (!parse_x100(tier2_hf, &p->tier2_hf_x100)) p->tier2_hf_x100 = 125;
+    p->magic = POLICY_MAGIC;
     p->valid = true;
     return true;
 }
@@ -113,7 +114,9 @@ static void say(char *reason, size_t cap, const char *s) { if (reason && cap) sn
 bool policy_within(const policy_t *p, const amulet_proposal_t *q, int64_t now_unix, char *reason, size_t cap)
 {
     if (q->tier == 0) return true;   // advisory: nothing to sign
-    if (!p || !p->valid) { say(reason, cap, "No policy on the pendant yet"); return false; }
+    if (!p || !p->valid || p->magic != POLICY_MAGIC || p->nallowed > POLICY_MAX_TARGETS) {
+        say(reason, cap, "No policy on the pendant yet"); return false;
+    }
     if (q->chain_id != p->chain) { say(reason, cap, "Wrong chain for this policy"); return false; }
     const policy_target_t *t = NULL;
     for (int i = 0; i < p->nallowed; i++) if (!memcmp(p->allowed[i].addr, q->to, 20)) { t = &p->allowed[i]; break; }

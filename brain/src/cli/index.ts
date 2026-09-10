@@ -11,6 +11,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { networkInterfaces } from "node:os";
+import { isAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { ENS, LEDGER_ADDRESS, PENDANT_PORT, POLICY_KEYS, POLICY_NAME, REPO_ROOT, STATUS_KEYS, loadDeployments, loadEnsDeployment } from "../config.js";
 import { deployerSigner, ensSetup, revertReason, signerFromKey, writeRecords } from "../ens/setup.js";
@@ -166,6 +167,8 @@ program.command("attack").description("play a compromised brain: push an out-of-
       }
       return;
     }
+    if (o.target && !isAddress(o.target)) throw new Error(`--target ${o.target} is not an address`);
+    if (o.value && !/^\d+(\.\d+)?$/.test(o.value)) throw new Error(`--value ${o.value} is not an ETH amount`);
     const kind: AttackKind = o.target
       ? { kind: "target", to: o.target as `0x${string}` }
       : { kind: "value", eth: (o.value as string | undefined) ?? "5" };

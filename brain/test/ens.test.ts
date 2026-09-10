@@ -23,6 +23,13 @@ describe("policy from ENS records", () => {
     expect(p.chain).toBe(11155111);
   });
 
+  it("fails closed on a record that is not a number", () => {
+    const rec = { ...policyRecords(base), "amulet.tier2_hf": "1.25 x" };
+    expect(() => policyFromRead(rec, DEFAULT_POLICY)).toThrow(/tier2_hf is not a number/);
+    const bad = { ...policyRecords(base), "amulet.max_value_wei": "lots" };
+    expect(() => policyFromRead(bad, DEFAULT_POLICY)).toThrow();
+  });
+
   it("refuses a name with no policy on it", () => {
     expect(() => policyFromRead({}, DEFAULT_POLICY)).toThrow(/amulet.version missing/);
     expect(() => policyFromRead({ "amulet.version": "1", "amulet.chain": "11155111" }, DEFAULT_POLICY)).toThrow(/amulet.allowed/);

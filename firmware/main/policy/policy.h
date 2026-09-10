@@ -19,7 +19,10 @@ typedef struct {
     uint8_t nsel;
 } policy_target_t;
 
+#define POLICY_MAGIC 0x414D5031u   // "AMP1": bump when this struct changes (NVS blob check)
+
 typedef struct {
+    uint32_t magic;             // POLICY_MAGIC; a cached blob from another layout is discarded
     bool valid;                 // parsed from a complete record set
     uint32_t version;
     uint64_t chain;

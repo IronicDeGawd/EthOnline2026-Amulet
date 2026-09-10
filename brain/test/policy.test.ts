@@ -24,6 +24,10 @@ const vectors: { name: string; tx: TxShape; expect: boolean }[] = [
   { name: "expired", tx: { ...ok, expiresAt: NOW - 1 }, expect: false },
   { name: "gas too low", tx: { ...ok, gas: 20_999 }, expect: false },
   { name: "gas too high", tx: { ...ok, gas: 10_000_001 }, expect: false },
+  // A plain ETH transfer has no selector to check: allowed to a listed target, capped by value.
+  { name: "plain transfer to listed target", tx: { ...ok, data: "0x", gas: 21_000 }, expect: true },
+  { name: "plain transfer to listed target over cap", tx: { ...ok, data: "0x", gas: 21_000, value: 5_000_000_000_000_000_000n }, expect: false },
+  { name: "plain transfer to unknown target", tx: { ...ok, data: "0x", gas: 21_000, to: "0x000000000000000000000000000000000000dEaD" }, expect: false },
 ];
 
 describe("policy", () => {

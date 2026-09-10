@@ -121,7 +121,8 @@ bool ens_load_cached(policy_t *out)
     if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return false;
     size_t n = sizeof *out;
     policy_t tmp;
-    bool ok = nvs_get_blob(h, NVS_KEY, &tmp, &n) == ESP_OK && n == sizeof tmp && tmp.valid;
+    bool ok = nvs_get_blob(h, NVS_KEY, &tmp, &n) == ESP_OK && n == sizeof tmp
+              && tmp.magic == POLICY_MAGIC && tmp.valid && tmp.nallowed <= POLICY_MAX_TARGETS;
     nvs_close(h);
     if (ok) *out = tmp;
     return ok;

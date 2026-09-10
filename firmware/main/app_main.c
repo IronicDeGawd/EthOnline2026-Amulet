@@ -163,11 +163,20 @@ done:
 // task below, where blocking for a human to press a Ledger button is fine.
 static amulet_proposal_t s_pending;
 static volatile bool s_have_pending;
-// The policy the wrist enforces, from ENS (ens/ens.c). A proposal outside it is held only
-// long enough for the main task to answer "policy_reject" and show why; it never arms.
+// The handoff crosses cores: the copy and the flag are published under a spinlock so the
+// main task never sees the flag before every byte of the proposal.
+static portMUX_TYPE s_pending_mux = portMUX_INITIALIZER_UNLOCKED;
+static bool take_pending_flag(void)
+{
+    portENTER_CRITICAL(&s_pending_mux);
+    bool have = s_have_pending;
+    portEXIT_CRITICAL(&s_pending_mux);
+    return have;
+}
+// The policy the wrist enforces, from ENS (ens/ens.c). Written and read on the main task
+// only: the check runs there, just before a proposal is shown, so a refresh can never be
+// half-applied under a check running on the websocket task.
 static policy_t s_policy;
-static volatile bool s_policy_reject;
-static char s_policy_reason[POLICY_REASON_LEN];
 static volatile bool s_policy_refresh_now;   // the brain saw the ENS records change
 static void on_ws_rx(const char *data, size_t len)
 {
@@ -186,12 +195,12 @@ static void on_ws_rx(const char *data, size_t len)
                  (unsigned long long)p.chain_id, (unsigned long long)AMULET_CHAIN_ID);
         return;
     }
-    if (s_have_pending) { ESP_LOGW(TAG, "already holding a proposal, dropped %s", p.id); return; }
-    s_policy_reject = !policy_within(&s_policy, &p, (int64_t)time(NULL), s_policy_reason, sizeof s_policy_reason);
+    if (take_pending_flag()) { ESP_LOGW(TAG, "already holding a proposal, dropped %s", p.id); return; }
+    portENTER_CRITICAL(&s_pending_mux);
     s_pending = p;
     s_have_pending = true;
-    if (s_policy_reject) ESP_LOGW(TAG, "proposal %s REFUSED by policy: %s (%s)", p.id, s_policy_reason, p.human);
-    else ESP_LOGI(TAG, "proposal %s tier %u: %s", p.id, p.tier, p.human);
+    portEXIT_CRITICAL(&s_pending_mux);
+    ESP_LOGI(TAG, "proposal %s tier %u: %s", p.id, p.tier, p.human);
 }
 
 // Read the policy from ENS; keep the cached one when the network says no. Returns whether
@@ -423,14 +432,6 @@ void app_main(void)
     ui_set_status(&st);
     ui_show_home();
 
-    // Policy: the last copy from NVS first (boots with no network still enforce it), then a
-    // fresh read from the ENS name. HOME says when neither is recent.
-    if (ens_load_cached(&s_policy)) ESP_LOGI(TAG, "policy v%u from NVS (%u targets)", s_policy.version, s_policy.nallowed);
-    policy_refresh(&st.policy_stale);
-    ui_set_status(&st);
-    if (!s_policy.valid) ESP_LOGW(TAG, "no policy yet: every tier-1/2 proposal will be refused until %s answers", AMULET_POLICY_NAME);
-    time_t policy_tried = time(NULL);
-
     // The brain does not exist yet. Starting the client against the day-0 placeholder just
     // spams a TLS failure and a reconnect every 3 s, which drowns the log and churns the CPU
     // during a demo. Point AMULET_WSS_URL at the real agent (ws:// on the LAN) to enable it.
@@ -439,6 +440,15 @@ void app_main(void)
 #else
     ESP_LOGW(TAG, "brain disabled (AMULET_BRAIN_ENABLED=0) — no websocket");
 #endif
+
+    // Policy: the last copy from NVS first (boots with no network still enforce it), then a
+    // fresh read from the ENS name (six eth_calls, ~45 s; the brain link comes up meanwhile
+    // and any proposal simply waits in s_pending). HOME says when neither is recent.
+    if (ens_load_cached(&s_policy)) ESP_LOGI(TAG, "policy v%u from NVS (%u targets)", s_policy.version, s_policy.nallowed);
+    policy_refresh(&st.policy_stale);
+    ui_set_status(&st);
+    if (!s_policy.valid) ESP_LOGW(TAG, "no policy yet: every tier-1/2 proposal will be refused until %s answers", AMULET_POLICY_NAME);
+    time_t policy_tried = time(NULL);
 
 #if AMULET_FAKE_PROPOSAL
     // Fired from the idle loop the first time the Ledger is ready, rather than once at boot,
@@ -500,20 +510,22 @@ void app_main(void)
             }
         }
 
-        // Out of policy: answer the brain, show why, and never arm. The Ledger never sees it.
-        if (s_have_pending && s_policy_reject) {
-            send_decision(s_pending.id, "policy_reject", NULL);
-            ui_attention(2);
-            ui_show_policy_reject(s_policy_reason);
-            s_have_pending = false;
-            s_policy_reject = false;
-            vTaskDelay(pdMS_TO_TICKS(3000));
-            ui_show_home();
-        }
-
-        if (s_have_pending && ui_state() != UI_PROPOSAL) {
-            ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
-            ui_show_proposal(&s_pending);
+        if (take_pending_flag() && ui_state() != UI_PROPOSAL) {
+            // Policy first. Out of policy: answer the brain, show why, never arm — the
+            // Ledger never sees it.
+            char reason[POLICY_REASON_LEN];
+            if (!policy_within(&s_policy, &s_pending, (int64_t)time(NULL), reason, sizeof reason)) {
+                ESP_LOGW(TAG, "proposal %s REFUSED by policy: %s (%s)", s_pending.id, reason, s_pending.human);
+                send_decision(s_pending.id, "policy_reject", NULL);
+                ui_attention(2);
+                ui_show_policy_reject(reason);
+                s_have_pending = false;
+                vTaskDelay(pdMS_TO_TICKS(3000));
+                ui_show_home();
+            } else {
+                ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
+                ui_show_proposal(&s_pending);
+            }
         }
 
         bool prop_confirm = ui_state() == UI_PROPOSAL && ui_take_confirm();   // taken once

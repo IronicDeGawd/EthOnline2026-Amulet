@@ -63,7 +63,14 @@ export function policyRecords(p: Policy): Record<string, string> {
 }
 
 export function policyFromRecords(rec: Record<string, string | undefined>, base: Policy = DEFAULT_POLICY): Policy {
-  const num = (k: string, d: number) => (rec[k] !== undefined && rec[k] !== "" ? Number(rec[k]) : d);
+  // A record that is present but not a number is a broken policy, not a default: NaN would
+  // make every "hf < threshold" comparison false and switch the safety rules off silently.
+  const num = (k: string, d: number) => {
+    if (rec[k] === undefined || rec[k] === "") return d;
+    const n = Number(rec[k]);
+    if (!Number.isFinite(n)) throw new Error(`ENS record ${k} is not a number: "${rec[k]}"`);
+    return n;
+  };
   const allowed = rec["amulet.allowed"]
     ? rec["amulet.allowed"].split(";").filter(Boolean).map((part) => {
         const [target, sels] = part.split(":");
