@@ -34,6 +34,13 @@ static lv_obj_t *s_home_line1, *s_home_line2, *s_home_date, *s_home_time;
 static lv_obj_t *s_bat_body, *s_bat_fill, *s_bat_tip, *s_bat_text;
 // PROPOSAL (tier 1/2) and ADVISORY (tier 0) share one screen; the objects for the mode not in
 // use are hidden. The band under the type is part of the background image.
+// The agent's face: the 16x16 drawing from its ENS record, doubled to 32x32 and kept as an
+// alpha mask so LVGL paints it in the agent's own colour.
+#define FACE_DRAW_PX 32
+static uint8_t s_face_buf[FACE_DRAW_PX * FACE_DRAW_PX * 4];   // ARGB8888, drawn pixel by pixel
+static lv_obj_t *s_p_face;
+static char s_agent_label[AGENT_LABEL_LEN];
+
 static lv_obj_t *s_p_bg, *s_p_plane, *s_p_verb, *s_p_amount, *s_p_unit, *s_p_pill, *s_p_pill_text;
 static lv_obj_t *s_p_btn, *s_p_arrow, *s_p_hold;                 // confirm row
 static lv_obj_t *s_p_lock, *s_p_lock1, *s_p_lock2;              // locked row
@@ -323,6 +330,11 @@ static void build_proposal(void)
 
     // tier 1/2 stack
     s_p_plane  = image(s, &ic_plane, 106, 18);
+    s_p_face = lv_canvas_create(s);
+    lv_canvas_set_buffer(s_p_face, s_face_buf, FACE_DRAW_PX, FACE_DRAW_PX, LV_COLOR_FORMAT_ARGB8888);
+    lv_obj_set_pos(s_p_face, 104, 14);
+    lv_canvas_fill_bg(s_p_face, lv_color_black(), LV_OPA_TRANSP);
+    show(s_p_face, false);
     s_p_verb   = text(s, &manrope_600_19, C_TEXT, 46,  "");
     s_p_amount = text(s, &manrope_800_52, C_TEXT, 64,  "");
     s_p_unit   = text(s, &manrope_700_16, C_TEXT, 122, "");
@@ -783,7 +795,8 @@ void ui_show_proposal(const amulet_proposal_t *p)
     bool split = split_human(p->human, verb, sizeof verb, amount, sizeof amount, unit, sizeof unit);
 
     // tier 1/2
-    show(s_p_plane, !advisory); show(s_p_verb, !advisory); show(s_p_amount, !advisory); show(s_p_unit, !advisory); show(s_p_pill, !advisory);
+    show(s_p_plane, !advisory && !s_agent_label[0]); show(s_p_face, !advisory && s_agent_label[0]);
+    show(s_p_verb, !advisory); show(s_p_amount, !advisory); show(s_p_unit, !advisory); show(s_p_pill, !advisory);
     // tier 0
     show(s_a_badge, advisory); show(s_a_label, advisory); show(s_a_amount, advisory); show(s_a_unit, advisory); show(s_a_detail, advisory); show(s_a_hint, advisory);
 
@@ -819,7 +832,12 @@ void ui_show_proposal(const amulet_proposal_t *p)
                                       p->deployment_id + (strlen(p->deployment_id) > 4 ? strlen(p->deployment_id) - 4 : 0));
     lv_label_set_text_fmt(s_d_evidence, "%s  block %" PRIu64, dep, p->evidence_block);
     if (advisory) lv_label_set_text(s_d_target, "advisory  nothing to sign");
-    else { char to[24]; proposal_format_addr(p->to, to, sizeof to); lv_label_set_text_fmt(s_d_target, "to %s  tier %u", to, (unsigned)p->tier); }
+    else {
+        char to[24]; proposal_format_addr(p->to, to, sizeof to);
+        // Who asked, where it goes, how heavy it is — the three things the sheet is for.
+        if (s_agent_label[0]) lv_label_set_text_fmt(s_d_target, "%s  to %s  tier %u", s_agent_label, to, (unsigned)p->tier);
+        else lv_label_set_text_fmt(s_d_target, "to %s  tier %u", to, (unsigned)p->tier);
+    }
     show(s_d_sheet, false);
 
     s_press_counts = false;
@@ -905,6 +923,31 @@ void ui_show_dismissed(bool advisory)
 }
 
 // The pendant's own no: the proposal broke the ENS policy, so the Ledger never saw it.
+void ui_set_agent(const agent_t *a)
+{
+    s_agent_label[0] = 0;
+    if (!display_ready() || !s_p_face || !lvgl_port_lock(0)) return;
+    bool have = a && a->has_face;
+    if (have) {
+        snprintf(s_agent_label, sizeof s_agent_label, "%s", a->label);
+        lv_canvas_fill_bg(s_p_face, lv_color_black(), LV_OPA_TRANSP);
+        lv_color_t ink = lv_color_hex(a->colour);
+        for (int y = 0; y < FACE_DRAW_PX; y++) {
+            for (int x = 0; x < FACE_DRAW_PX; x++) {
+                int sy = y / 2, sx = x / 2;            // each drawn pixel is two on the panel
+                if (a->face[sy * 2 + (sx >> 3)] & (0x80 >> (sx & 7)))
+                    lv_canvas_set_px(s_p_face, x, y, ink, LV_OPA_COVER);
+            }
+        }
+        ESP_LOGI(TAG, "face for %s in #%06x", a->label, (unsigned)a->colour);
+    }
+    // The agent's face stands where the paper plane does, so the icon that says a proposal
+    // arrived is the face of whoever sent it.
+    show(s_p_face, have);
+    show(s_p_plane, !have);
+    lvgl_port_unlock();
+}
+
 void ui_show_policy_reject(const char *reason)
 {
     if (display_ready() && s_r_title && lvgl_port_lock(0)) {

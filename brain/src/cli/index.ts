@@ -11,10 +11,12 @@ import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
 import { isAddress, parseAbi, parseEther, toHex, type Hex } from "viem";
 import { ulid } from "ulid";
+import { namehash, normalize } from "viem/ens";
 import { sepolia as sepoliaChain } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { ENS, LEDGER_ADDRESS, PENDANT_PORT, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, loadDeployments, loadEnsDeployment, type Deployments } from "../config.js";
-import { deployerSigner, ensSetup, revertReason, signerFromKey, writeRecords } from "../ens/setup.js";
+import { AGENTS, ENS, LEDGER_ADDRESS, PENDANT_PORT, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, DEFAULT_AGENT, agentName, loadDeployments, loadEnsDeployment, type AgentKey, type Deployments } from "../config.js";
+import { deployerSigner, ensSetup, issueAgent, revertReason, revokeAgent, signerFromKey, writeRecords } from "../ens/setup.js";
+import { FACES, faceAvatar, faceRecord } from "../agents/face.js";
 import { readPolicy, readRecords, type PolicyRead } from "../ens/resolver.js";
 import { makeStatusWriter, type StatusWriter } from "../ens/status.js";
 import { formatView, readMainnetView } from "../chain/account.js";
@@ -22,7 +24,7 @@ import { accountBalance, accountNonce, makeRelayer, type Relayer } from "../chai
 import { runAttack, type AttackKind } from "../attack.js";
 import { fetchYieldTable, formatTable, YIELD_ASSET } from "../data/graph/yield.js";
 import { RESOLVER_ABI } from "../ens/abi.js";
-import { policyRecords } from "../engine/policy.js";
+import { agentPolicy, policyRecords } from "../engine/policy.js";
 import { deployerKey, loadSecrets, requireSecret, sealSecrets } from "../ring/keyring.js";
 import { GraphClient } from "../data/graph/client.js";
 import { fetchLending, pickMarket } from "../data/graph/lending.js";
@@ -66,7 +68,7 @@ async function setPrice(sim: `0x${string}`, price: bigint, rpc: string, key: Hex
   log(`  tx ${hash}`);
 }
 
-async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; clear?: boolean }) {
+async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; clear?: boolean; agent?: string }) {
   const s = await loadSecrets();
   const dep = loadDeployments();
   const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
@@ -79,17 +81,23 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
 
   // Policy: from ENS unless told otherwise. Without the name there is no policy to enforce,
   // so a failed read at boot stops the brain rather than quietly running on defaults.
-  let policy = defaultPolicy(dep);
+  // The brain runs AS a named agent, and reads its limits from its own name. Two agents on
+  // the same machine read different names and are held to different caps.
+  const agent = (opts.agent ?? DEFAULT_AGENT) as AgentKey;
+  if (!AGENTS[agent]) throw new Error(`unknown agent ${agent}; known: ${Object.keys(AGENTS).join(", ")}`);
+  const myName = agentName(AGENTS[agent].label);
+  let policy = agentPolicy(agent, dep);
   let policySource: (() => Promise<PolicyRead>) | undefined;
   let status: StatusWriter | undefined;
   if (opts.ens !== false) {
-    policySource = () => readPolicy(sepolia, POLICY_NAME, defaultPolicy(dep));
+    policySource = () => readPolicy(sepolia, myName, agentPolicy(agent, dep));
     const first = await policySource();
     policy = first.policy;
+    log(`running as ${AGENTS[agent].title} (${myName})`);
     log(`policy from ${first.name}: v${policy.version} chain ${policy.chain}, ${policy.allowed.length} targets, cap ${Number(policy.max_value_wei) / 1e18} ETH, tiers ${policy.tier1_hf}/${policy.tier2_hf}`);
     if (s.BRAIN_LOG_PK) {
       const ensDep = loadEnsDeployment();
-      status = makeStatusWriter({ rpcUrl: rpc, pk: s.BRAIN_LOG_PK as `0x${string}`, resolver: ensDep.resolver, node: ensDep.node, log });
+      status = makeStatusWriter({ rpcUrl: rpc, pk: s.BRAIN_LOG_PK as `0x${string}`, resolver: ensDep.resolver, node: namehash(normalize(myName)), log });
     }
   } else {
     log("policy: built-in defaults (--no-ens); nothing on the wrist will match a changed ENS record");
@@ -114,7 +122,7 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)`);
   log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
   const simulate = (await parseSimulate(opts.simulate, dep, rpc, deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
-  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, relayer, log, simulate, once: opts.once });
+  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, relayer, agent: AGENTS[agent].label, log, simulate, once: opts.once });
   process.on("SIGINT", () => { brain.stop(); pendant.close(); process.exit(0); });
   await brain.run();
   pendant.close();
@@ -129,14 +137,16 @@ program.command("run").description("watch, propose, record")
   .option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
   .option("--clear", "typed-data signing: the Ledger shows the action in words")
-  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: o.once, ens: o.ens, clear: o.clear }));
+  .option("--agent <name>", "which named agent to run as", DEFAULT_AGENT)
+  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: o.once, ens: o.ens, clear: o.clear, agent: o.agent }));
 
 program.command("propose").description("one proposal, then exit")
   .requiredOption("--simulate <what>", "hf=1.15 | price_drop | util_spike | yield")
   .option("--no-llm").option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
   .option("--clear", "typed-data signing: the Ledger shows the action in words")
-  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: true, ens: o.ens, clear: o.clear }));
+  .option("--agent <name>", "which named agent to run as", DEFAULT_AGENT)
+  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: true, ens: o.ens, clear: o.clear, agent: o.agent }));
 
 program.command("stale").description("pin a wrong deployment so the freshness gate trips")
   .requiredOption("--deployment <Qm>").option("--port <n>", "pendant port", String(PENDANT_PORT))
@@ -208,6 +218,7 @@ program.command("intent").description("push one typed-data intent to the pendant
   .argument("<action>", "Supply | Repay | Withdraw | Borrow")
   .argument("<amount>", "ETH for Supply/Repay/Withdraw, sUSDC units for Borrow")
   .option("--sim <s>", "simA | simB", "simA")
+  .option("--agent <name>", "which named agent is asking", DEFAULT_AGENT)
   .option("--port <n>", "pendant port", String(PENDANT_PORT))
   .action(async (action: string, amount: string, o) => {
     if (!["Supply", "Repay", "Withdraw", "Borrow"].includes(action)) throw new Error(`unknown action ${action}`);
@@ -237,7 +248,7 @@ program.command("intent").description("push one typed-data intent to the pendant
       rationale: "Typed data: the device reads this, it is not blind signing.",
       tx: { chainId: dep.chainId, to: market, value: toHex(action === "Borrow" ? 0n : units), data: dep.selectors.supply, nonce: 0, maxFeePerGas: toHex(0n), maxPriorityFeePerGas: toHex(0n), gas: 90_000 },
       evidence: { deploymentId: "manual", block: 0, queriedAt: 0, subgraph: "intent" },
-      expiresAt: Math.floor(Date.now() / 1000) + 600, intent,
+      expiresAt: Math.floor(Date.now() / 1000) + 600, intent, agent: o.agent,
     };
     log(`INTENT ${id}: ${intent.summary} (account ${dep.amuletAccount}, nonce ${BigInt(intent.nonce)})`);
     if (!pendant.send(p)) throw new Error("pendant not connected");
@@ -256,6 +267,7 @@ program.command("attack").description("play a compromised brain: push an out-of-
   .option("--value <eth>", "allowed call with this much ETH attached (over the cap)")
   .option("--target <addr>", "plain transfer to an address the policy never listed")
   .option("--raise-limit", "brain hot key tries setText(amulet.max_value_wei)")
+  .option("--as <agent>", "claim to be this named agent; omit to send with no name at all")
   .option("--port <n>", "pendant port", String(PENDANT_PORT))
   .action(async (o) => {
     const s = await loadSecrets();
@@ -290,7 +302,7 @@ program.command("attack").description("play a compromised brain: push an out-of-
     pendant.on("presence", (p) => { if (p.address) ledger = p.address as `0x${string}`; });
     await new Promise((r) => setTimeout(r, 1500));
     try {
-      await runAttack({ sepolia, dep, policy, ledger, pendant, recorder, log }, kind);
+      await runAttack({ sepolia, dep, policy, ledger, pendant, recorder, agent: o.as, log }, kind);
     } finally {
       pendant.close();
     }
@@ -316,6 +328,39 @@ ens.command("setup").description("register the name, deploy resolver + subregist
     log(`${out.name} → resolver ${out.resolver}${out.subregistry ? `, subregistry ${out.subregistry}` : ""}`);
     await showEns(sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL")));
   });
+ens.command("agent").description("give an agent its own name, its own limits and its own face")
+  .argument("[label]", "repay | yield | all", "all")
+  .action(async (label: string) => {
+    const s = await loadSecrets();
+    const dep = loadDeployments();
+    const brain = privateKeyToAccount(requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`).address;
+    const signer = deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log));
+    const keys = label === "all" ? (Object.keys(AGENTS) as AgentKey[]) : [label as AgentKey];
+    for (const k of keys) {
+      const a = AGENTS[k];
+      if (!a) throw new Error(`unknown agent ${k}`);
+      const face = FACES[k];
+      const records = {
+        ...policyRecords(agentPolicy(k, dep)),
+        "amulet.brain": brain,
+        "amulet.face": faceRecord(face),
+        avatar: faceAvatar(face),
+        description: `${a.title} — an Amulet agent. Its limits are the amulet.* records on this name.`,
+        "amulet.status": "offline",
+      };
+      log(`${agentName(a.label)}: cap ${Number(a.caps.max_value_wei) / 1e18} ETH on ${a.caps.targets.join(", ")}`);
+      const out = await issueAgent(signer, { label: a.label, records, brain, log });
+      log(`  ${out.name} node ${out.node} expires ${new Date(out.expiry * 1000).toISOString().slice(0, 10)}`);
+    }
+  });
+
+ens.command("revoke").description("blank an agent's policy: the wrist then refuses everything it sends")
+  .argument("<label>")
+  .action(async (label: string) => {
+    const s = await loadSecrets();
+    await revokeAgent(deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log)), label, log);
+  });
+
 ens.command("show").description("records as any wallet reads them, plus who may edit what").action(async () => {
   const s = await loadSecrets();
   await showEns(sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL")));

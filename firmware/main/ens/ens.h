@@ -6,12 +6,19 @@
 #include <stdint.h>
 #include "policy.h"
 
-// One eth_call per record. On success `out` is the fresh policy (also saved to NVS) and
-// true is returned. On failure `out` is left as it was.
-bool ens_fetch_policy(policy_t *out);
+// Reads one agent's name: its policy records and its face. `label` is the subname, so
+// "repay" reads repay.<parent>.eth. On success `out` holds the agent and true is returned;
+// on failure `out` is left as it was.
+//
+// An empty version record on a name that answered is NOT a network problem — it means the
+// Ledger blanked that agent's policy, or the name lapsed. `revoked` is set in that case and
+// the caller drops the agent rather than keeping its cached policy alive.
+bool ens_fetch_agent(const char *label, agent_t *out, bool *revoked);
 
-// Last saved copy, if any.
-bool ens_load_cached(policy_t *out);
+// The agents saved last time, so a pendant that boots with no network still enforces what it
+// last saw. Returns how many were restored.
+int ens_load_cached(agent_t *out, int max);
+void ens_save_cached(const agent_t *in, int n);
 
-// One text record, for the log. `out` gets the UTF-8 value (NUL-terminated, may be empty).
-bool ens_text(const char *key, char *out, size_t cap);
+// One text record of a given name, for the log.
+bool ens_text_of(const char *label, const char *key, char *out, size_t cap);

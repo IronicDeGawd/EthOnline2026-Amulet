@@ -14,6 +14,53 @@ static int s_id = 1;
 
 void rpc_init(const char *url) { s_url = url; }
 
+// One HTTP POST of a JSON body; returns the raw answer (caller frees) or NULL. Shared by the
+// single-call and batch paths so there is one place that knows about TLS, timeouts and sizes.
+static char *post_json(const char *body, size_t len, char *err_out, size_t err_cap, const char *what)
+{
+    esp_http_client_config_t cfg = { .url = s_url, .method = HTTP_METHOD_POST, .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 20000 };
+    esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    esp_http_client_set_header(c, "Content-Type", "application/json");
+    char *resp = NULL;
+    // Every failure names itself: a blank reason on a 32 mm screen cannot be debugged.
+    esp_err_t oe = esp_http_client_open(c, (int)len);
+    if (oe != ESP_OK) {
+        ESP_LOGE(TAG, "%s: open failed: %s (free heap %u, internal %u)", what, esp_err_to_name(oe),
+                 (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+        // The full ESP name is one unbreakable word wider than the screen; the log has it.
+        if (err_out) snprintf(err_out, err_cap, "no route to RPC, error 0x%x", (unsigned)oe);
+        goto out;
+    }
+    // A short body goes out in one write; a batch does not. esp_http_client_write returns
+    // what it managed, and a server left waiting for the rest of a request simply times out.
+    for (size_t sent = 0; sent < len; ) {
+        int wrote = esp_http_client_write(c, body + sent, (int)(len - sent));
+        if (wrote <= 0) {
+            ESP_LOGE(TAG, "%s: sent %u of %u bytes", what, (unsigned)sent, (unsigned)len);
+            if (err_out) snprintf(err_out, err_cap, "could not send the request");
+            goto out;
+        }
+        sent += (size_t)wrote;
+    }
+    int cl = esp_http_client_fetch_headers(c);
+    int status = esp_http_client_get_status_code(c);
+    int cap = (cl > 0 && cl < 65536) ? cl + 1 : 16384;
+    resp = malloc(cap);
+    if (!resp) goto out;
+    int total = 0, r;
+    while ((r = esp_http_client_read(c, resp + total, cap - 1 - total)) > 0) { total += r; if (total >= cap - 1) break; }
+    resp[total] = 0;
+    if (status != 200) {
+        ESP_LOGE(TAG, "%s: HTTP %d: %.120s", what, status, resp);
+        if (err_out) snprintf(err_out, err_cap, "RPC answered HTTP %d", status);
+        free(resp);
+        resp = NULL;
+    }
+out:
+    esp_http_client_cleanup(c);
+    return resp;
+}
+
 // Returns the detached "result" node (caller cJSON_Delete's it) or NULL; err_out gets error.message if any.
 static cJSON *call_json(const char *method, const char *params_json, char *err_out, size_t err_cap)
 {
@@ -21,37 +68,13 @@ static cJSON *call_json(const char *method, const char *params_json, char *err_o
     char *body = malloc(bcap); if (!body) return NULL;
     int n = snprintf(body, bcap, "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"%s\",\"params\":%s}", s_id++, method, params_json);
     if (n <= 0 || n >= (int)bcap) { free(body); return NULL; }
-    esp_http_client_config_t cfg = { .url = s_url, .method = HTTP_METHOD_POST, .crt_bundle_attach = esp_crt_bundle_attach, .timeout_ms = 15000 };
-    esp_http_client_handle_t c = esp_http_client_init(&cfg);
-    esp_http_client_set_header(c, "Content-Type", "application/json");
-    char *resp = NULL;
-    int status = 0;
-    // Every failure names itself: a blank reason on a 32 mm screen cannot be debugged.
-    esp_err_t oe = esp_http_client_open(c, n);
-    if (oe != ESP_OK) {
-        ESP_LOGE(TAG, "%s: open failed: %s (free heap %u, internal %u)", method, esp_err_to_name(oe),
-                 (unsigned)esp_get_free_heap_size(), (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-        // The full ESP name is one unbreakable word wider than the screen; the log has it.
-        if (err_out) snprintf(err_out, err_cap, "no route to RPC, error 0x%x", (unsigned)oe);
-        goto out;
-    }
-    esp_http_client_write(c, body, n);
-    int cl = esp_http_client_fetch_headers(c);
-    status = esp_http_client_get_status_code(c);
-    int cap = (cl > 0 && cl < 65536) ? cl + 1 : 16384;
-    resp = malloc(cap);
-    int total = 0, r;
-    while ((r = esp_http_client_read(c, resp + total, cap - 1 - total)) > 0) { total += r; if (total >= cap - 1) break; }
-    resp[total] = 0;
-    ESP_LOGD(TAG, "%s -> %d bytes", method, total);
-out:
-    esp_http_client_cleanup(c);
+    char *resp = post_json(body, (size_t)n, err_out, err_cap, method);
     free(body);
     if (!resp) return NULL;
     cJSON *j = cJSON_Parse(resp);
     if (!j) {
-        ESP_LOGE(TAG, "%s: HTTP %d, not JSON: %.120s", method, status, resp);
-        if (err_out) snprintf(err_out, err_cap, "RPC answered HTTP %d", status);
+        ESP_LOGE(TAG, "%s: answer is not JSON: %.120s", method, resp);
+        if (err_out) snprintf(err_out, err_cap, "RPC answer was not JSON");
         free(resp);
         return NULL;
     }
@@ -95,6 +118,51 @@ bool rpc_eth_call(const char *to_hex, const char *data_hex, char *out, size_t ou
     else ESP_LOGW(TAG, "eth_call result %u bytes does not fit %u", (unsigned)strlen(r), (unsigned)out_cap);
     free(r);
     return ok;
+}
+
+// Several eth_calls in one HTTP request. Twelve separate round trips to a public endpoint
+// time out; one batch does not. Results come back in `out[i]`, matched by id, and a call
+// that failed leaves its slot empty rather than shifting the others.
+bool rpc_eth_call_batch(const char *to_hex, const char **data_hex, int n, char **out, size_t out_cap)
+{
+    if (n <= 0 || n > 16) return false;
+    size_t bcap = 256;
+    for (int i = 0; i < n; i++) bcap += strlen(data_hex[i]) + 160;
+    char *body = malloc(bcap);
+    if (!body) return false;
+    int w = snprintf(body, bcap, "[");
+    for (int i = 0; i < n; i++) {
+        w += snprintf(body + w, bcap - (size_t)w,
+                      "%s{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"eth_call\",\"params\":[{\"to\":\"%s\",\"data\":\"%s\"},\"latest\"]}",
+                      i ? "," : "", i, to_hex, data_hex[i]);
+    }
+    w += snprintf(body + w, bcap - (size_t)w, "]");
+
+    char *resp = post_json(body, (size_t)w, NULL, 0, "eth_call batch");
+    free(body);
+    if (!resp) return false;
+
+    cJSON *j = cJSON_Parse(resp);
+    free(resp);
+    if (!j || !cJSON_IsArray(j)) { ESP_LOGE(TAG, "batch: answer is not an array"); if (j) cJSON_Delete(j); return false; }
+
+    for (int i = 0; i < n; i++) out[i][0] = 0;
+    int got = 0;
+    const cJSON *e;
+    cJSON_ArrayForEach(e, j) {
+        const cJSON *idj = cJSON_GetObjectItem(e, "id");
+        const cJSON *r = cJSON_GetObjectItem(e, "result");
+        if (!cJSON_IsNumber(idj)) continue;
+        int i = (int)idj->valuedouble;
+        if (i < 0 || i >= n) continue;
+        if (cJSON_IsString(r) && r->valuestring && strlen(r->valuestring) < out_cap) {
+            strcpy(out[i], r->valuestring);
+            got++;
+        }
+    }
+    cJSON_Delete(j);
+    if (got != n) ESP_LOGW(TAG, "batch: %d of %d calls answered", got, n);
+    return got == n;
 }
 
 bool rpc_get_nonce(const char *addr_hex, uint64_t *nonce)

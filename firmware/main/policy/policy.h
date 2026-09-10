@@ -44,6 +44,27 @@ bool policy_parse(policy_t *p, const char *version, const char *chain, const cha
 // `reason` (POLICY_REASON_LEN) is filled on refusal with words that fit the screen.
 bool policy_within(const policy_t *p, const amulet_proposal_t *q, int64_t now_unix, char *reason, size_t cap);
 
+// ---- agents -------------------------------------------------------------------------------
+// One agent, one ENS name, one policy, one face. The pendant holds a few of them and checks
+// each proposal against the policy of the agent that sent it. A proposal from a name the
+// pendant does not know is refused outright, whatever it says.
+#define AGENT_MAX        3
+#define AGENT_LABEL_LEN  16
+#define FACE_PX          16                       // the drawing is 16x16, one bit a pixel
+#define FACE_BYTES       (FACE_PX * FACE_PX / 8)  // 32
+#define FACE_RECORD_MIN  3                        // colour, then the bitmap
+
+typedef struct {
+    char     label[AGENT_LABEL_LEN];
+    policy_t policy;
+    uint8_t  face[FACE_BYTES];
+    uint32_t colour;      // 0xRRGGBB, from the record's first three bytes
+    bool     has_face;
+} agent_t;
+
+// Decodes an `amulet.face` record: base64 of three colour bytes then the bitmap.
+bool face_parse(const char *b64, agent_t *out);
+
 // Helpers exposed for the host test.
 bool policy_dec_to_be32(const char *dec, uint8_t out[32]);
 bool policy_hex_to_bytes(const char *hex, uint8_t *out, size_t len);

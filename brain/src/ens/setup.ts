@@ -12,7 +12,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 import { labelhash, namehash, normalize, packetToBytes } from "viem/ens";
 import { generatePrivateKey } from "viem/accounts";
-import { ENS, LEDGER_ADDRESS, POLICY_NAME, REPO_ROOT, STATUS_KEYS, type EnsDeployment } from "../config.js";
+import { ENS, LEDGER_ADDRESS, POLICY_NAME, REPO_ROOT, STATUS_KEYS, loadEnsDeployment, type EnsDeployment } from "../config.js";
 import { FACTORY_ABI, PR, REGISTRAR_ABI, REGISTRY_ABI, RESOLVER_ABI, RR, USDC_ABI, adm } from "./abi.js";
 
 const PARENT_DURATION_S = 365n * 86_400n;
@@ -233,8 +233,8 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
   return out;
 }
 
-export async function writeRecords(s: Signer, resolver: `0x${string}`, records: Record<string, string>, log: (l: string) => void): Promise<void> {
-  const node = policyNode();
+export async function writeRecords(s: Signer, resolver: `0x${string}`, records: Record<string, string>, log: (l: string) => void, name = POLICY_NAME): Promise<void> {
+  const node = namehash(normalize(name));
   const calls = Object.entries(records).map(([k, v]) => encodeFunctionData({ abi: RESOLVER_ABI, functionName: "setText", args: [node, k, v] }));
   if (calls.length === 1) {
     const [k, v] = Object.entries(records)[0];
@@ -252,3 +252,66 @@ export function revertReason(e: unknown): string {
 
 const ZERO32 = `0x${"0".repeat(64)}` as const;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export interface AgentOptions {
+  label: string;                       // "yield" → yield.<parent>.eth
+  records: Record<string, string>;     // its own policy, plus avatar and description
+  brain: `0x${string}`;
+  ledger?: `0x${string}`;
+  log: (line: string) => void;
+}
+
+// A second, third, nth agent. Each one is a real name under the parent with its own expiry,
+// its own policy records and its own avatar, so the wrist can tell them apart and each is
+// held to its own limits. The Ledger can edit one, or let one lapse, without touching the
+// others — that is the whole point of giving an agent a name instead of a config entry.
+export async function issueAgent(s: Signer, o: AgentOptions): Promise<{ name: string; node: Hex; expiry: number }> {
+  const { log } = o;
+  const ledger = o.ledger ?? LEDGER_ADDRESS;
+  const dep = loadEnsDeployment();
+  if (!dep.subregistry) throw new Error("this deployment has no subregistry: agents need real names, re-run ens setup");
+  const name = `${o.label}.${ENS.parentLabel}.eth`;
+  const reg = { address: dep.subregistry, abi: REGISTRY_ABI } as const;
+  const id = BigInt(labelhash(o.label));
+  const now = Number((await s.pub.getBlock()).timestamp);
+
+  let expiry = Number(await s.pub.readContract({ ...reg, functionName: "getExpiry", args: [id] }));
+  if (expiry === 0) {
+    expiry = now + CHILD_TTL_S;
+    await send(s, log, `register ${name} (expires in 30d)`, {
+      ...reg, functionName: "register",
+      args: [o.label, s.account.address, "0x0000000000000000000000000000000000000000", dep.resolver,
+             adm(RR.RENEW | RR.SET_RESOLVER | RR.SET_SUBREGISTRY | RR.UNREGISTER) | RR.CAN_TRANSFER_ADMIN, BigInt(expiry)],
+    });
+  } else if (expiry <= now + 86_400) {
+    expiry = now + CHILD_TTL_S;
+    await send(s, log, `renew ${name}`, { ...reg, functionName: "renew", args: [id, BigInt(expiry)] });
+  } else {
+    log(`${name} already registered, expires ${new Date(expiry * 1000).toISOString().slice(0, 10)}`);
+  }
+
+  // The Ledger governs this agent: it edits every record and it decides whether the name
+  // lives on. The brain reports its status and nothing else.
+  const dn = dnsName(name);
+  const rsv = { address: dep.resolver, abi: RESOLVER_ABI } as const;
+  if (!(await s.pub.readContract({ ...reg, functionName: "hasRoles", args: [id, RR.RENEW, ledger] }))) {
+    await send(s, log, "Ledger ← RENEW", { ...reg, functionName: "grantRoles", args: [id, RR.RENEW, ledger] });
+  }
+  await send(s, log, "Ledger ← text-record admin", { ...rsv, functionName: "authorizeNameRoles", args: [dn, adm(PR.SET_TEXT), ledger, true] });
+  for (const k of STATUS_KEYS) {
+    await send(s, log, `brain ← ${k}`, { ...rsv, functionName: "authorizeTextRoles", args: [dn, k, o.brain, true] });
+  }
+
+  await writeRecords(s, dep.resolver, o.records, log, name);
+  return { name, node: namehash(normalize(name)), expiry };
+}
+
+// Blank an agent's policy so nothing it proposes can be checked against anything. A pendant
+// that reads an empty version record treats the agent as revoked and refuses everything it
+// sends — the same answer it gives when the name has expired.
+export async function revokeAgent(s: Signer, label: string, log: (l: string) => void): Promise<void> {
+  const dep = loadEnsDeployment();
+  const name = `${label}.${ENS.parentLabel}.eth`;
+  await writeRecords(s, dep.resolver, { "amulet.version": "", "amulet.allowed": "" }, log, name);
+  log(`${name} revoked: its policy is blank, the wrist will refuse everything it sends`);
+}

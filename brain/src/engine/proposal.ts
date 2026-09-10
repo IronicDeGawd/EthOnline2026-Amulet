@@ -32,6 +32,7 @@ export interface Intent {
 export interface Proposal {
   type: "proposal";
   id: string;
+  agent: string; // which named agent is asking; the wrist checks it against that name's policy
   tier: Tier;
   action: Action;
   human: string;
@@ -60,10 +61,12 @@ export function assemble(
   evidence: Evidence,
   now = Math.floor(Date.now() / 1000),
   intent?: Intent,
+  agent = "repay",
 ): Proposal {
   return {
     type: "proposal",
     id: ulid(),
+    agent,
     tier,
     action,
     human: text.human,

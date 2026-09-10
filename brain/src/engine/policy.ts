@@ -2,7 +2,7 @@
 // out-of-policy proposal is refused here first and, if the brain is compromised and skips
 // this stage, refused again on the wrist. Records come from ENS (ens/resolver.ts); until
 // then the defaults are built from the deployment file.
-import { DEFAULT_POLICY, type Deployments, type Policy } from "../config.js";
+import { AGENTS, DEFAULT_POLICY, type AgentKey, type Deployments, type Policy } from "../config.js";
 
 export interface TxShape {
   chainId: number;
@@ -14,6 +14,17 @@ export interface TxShape {
 }
 
 export type PolicyVerdict = { ok: true } | { ok: false; reason: string };
+
+// One agent's policy: the same shape as the default, narrowed to what that agent may touch.
+export function agentPolicy(key: AgentKey, dep: Deployments): Policy {
+  const a = AGENTS[key];
+  const sel = a.caps.selectors.map((n) => dep.selectors[n]);
+  return {
+    ...DEFAULT_POLICY,
+    max_value_wei: a.caps.max_value_wei,
+    allowed: a.caps.targets.map((t) => ({ target: dep[t], selectors: sel })),
+  };
+}
 
 export function defaultPolicy(dep: Deployments): Policy {
   const s = dep.selectors;

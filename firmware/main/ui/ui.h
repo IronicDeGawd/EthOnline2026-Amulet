@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "proposal.h"
+#include "policy.h"
 
 typedef enum {
     UI_HOME,          // idle: identity + readiness
@@ -39,6 +40,9 @@ void ui_show_ledger_wait(const char *what);   // e.g. "Confirm on your Nano X"
 void ui_show_result(bool ok, const char *detail);  // tx hash, or the failure reason
 void ui_show_dismissed(bool advisory);
 void ui_show_policy_reject(const char *reason);   // the pendant refused it before the Ledger saw it
+// Whose proposal is coming: the agent's face replaces the icon at the top of the proposal
+// screen, so you see who is asking before you read what they want. NULL restores the default.
+void ui_set_agent(const agent_t *a);
 void ui_show_options(const amulet_options_t *o);  // yield card: tap a row to pick, swipe to dismiss
 bool ui_take_pick(int *idx);                       // true once per tapped row
 void ui_show_picked(const char *venue);            // "Picked · Spark WETH", the agent is building the proposal             // after a swipe: "Declined" / "Dismissed"
