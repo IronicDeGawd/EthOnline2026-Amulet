@@ -303,8 +303,8 @@ program.command("demo").description("one key per scenario, with the pendant conn
       const k = raw.trim().toLowerCase();
       if (k === "q" || raw === "\u0003") { pendant.close(); process.exit(0); }
       if (k === "m") { console.log(MENU); return; }
-      if (busy) { log("still on the last one"); return; }
-      if (!"1234567890ps".includes(k) || !k) return;
+      if (busy) { log("still on that one — swipe or sign on the wrist first"); return; }
+      if (!k || !"1234567890prs".includes(k)) return;
       busy = true;
       runScenario(k, d).catch((e) => log(`failed: ${(e as Error).message.split("\n")[0]}`)).finally(() => { busy = false; });
     });

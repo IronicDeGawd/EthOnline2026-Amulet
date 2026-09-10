@@ -24,6 +24,11 @@ export interface DemoDeps {
 }
 
 const EVIDENCE = { deploymentId: "manual", block: 0, queriedAt: 0, subgraph: "demo" };
+// Nothing that needs the wrist should be started with the wrist away: the scenario would
+// simply sit there for its whole timeout with no way to tell why.
+function wrist(d: DemoDeps): void {
+  if (!d.pendant.connected) throw new Error("the pendant is away — wait for \"pendant connected\"");
+}
 const sim = (d: Deployments, s: string) => (s === "simB" ? d.simB : d.simA);
 const simName = (s: string) => (s === "simB" ? "Sim-B" : "Sim-A");
 
@@ -40,6 +45,7 @@ async function goodRequest(d: DemoDeps, agent: AgentKey, eth: string, which: str
     deadline: toHex(BigInt(Math.floor(Date.now() / 1000) + 900)), account,
   };
   const id = ulid();
+  wrist(d);
   d.log(`${AGENTS[agent].title} asks: ${summary}`);
   d.pendant.send({
     type: "proposal", id, agent: AGENTS[agent].label, tier: 2, action: "MOVE_SUPPLY",
@@ -62,6 +68,7 @@ async function badRequest(d: DemoDeps, agent: string, eth: string, which: string
   const market = sim(d.dep, which);
   const amount = parseEther(eth);
   const id = ulid();
+  wrist(d);
   d.log(`${agent || "an unnamed agent"} asks: Add ${eth} ETH collateral on ${simName(which)}  (${why})`);
   d.pendant.send({
     type: "proposal", id, agent, tier: 2, action: "ADD_COLLATERAL",
@@ -86,6 +93,7 @@ async function yieldCard(d: DemoDeps): Promise<void> {
     rule: "YIELD_OPP", action: "OPTIONS", sim: d.dep.simA, simName: "Sim-A", valueWei: 0n, options: rows,
     facts: { asset: "WETH", best: "Spark", bestRate: "3.97", current: "Aave", curRate: "1.47", delta: 250 },
   };
+  wrist(d);
   const { card } = assembleOptions(c, d.dep, d.policy, EVIDENCE);
   d.log(`card: ${card.items.map((i) => `${i.human} ${(i.apyBps / 100).toFixed(2)}%`).join(" | ")}`);
   d.pendant.send(card);
@@ -105,10 +113,12 @@ export const MENU = `
   6  a request with no agent name        refused outright
   7  a request from a name we never set  refused outright
   8  the agent tries to raise its cap    the resolver refuses it
-  9  the Ledger lowers repay's cap       both sides follow within a minute
-  0  put repay's cap back
-  p  drop the Sim-A price                health factor falls
-  s  status
+  9  the Ledger lowers repay's cap       to 0.02 ETH; press 5 after it
+  0  put repay's cap back                0.05 ETH again
+  p  drop the Sim-A price                $1100: the health factor falls
+  r  put the Sim-A price back            $1600: healthy again
+  s  status                              caps, balance, nonce, pendant
+  m  show this menu again
   q  quit
 `;
 
@@ -144,6 +154,10 @@ export async function runScenario(k: string, d: DemoDeps): Promise<void> {
     case "p":
       d.log("dropping the Sim-A price to $1100");
       await d.setPrice(110_000_000_000n);
+      return;
+    case "r":
+      d.log("putting the Sim-A price back to $1600");
+      await d.setPrice(160_000_000_000n);
       return;
     case "s": {
       const caps = await Promise.all(Object.values(AGENTS).map(async (a) => {
