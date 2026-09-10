@@ -187,7 +187,26 @@ static bool take_options_flag(void)
 // The policy the wrist enforces, from ENS (ens/ens.c). Written and read on the main task
 // only: the check runs there, just before a proposal is shown, so a refresh can never be
 // half-applied under a check running on the websocket task.
-static policy_t s_policy;
+// The agents this pendant knows, each read from its own ENS name. A proposal is checked
+// against the policy of the agent that sent it; one from a name that is not here is refused
+// whatever it says.
+static agent_t s_agents[AGENT_MAX];
+static int s_nagents;
+
+static const agent_t *agent_find(const char *label)
+{
+    if (!label || !label[0]) return NULL;
+    for (int i = 0; i < s_nagents; i++) if (!strcmp(s_agents[i].label, label)) return &s_agents[i];
+    return NULL;
+}
+
+// The freshest read across the agents we hold, for the "policy not refreshed" line on HOME.
+static int64_t agents_fetched_at(void)
+{
+    int64_t newest = 0;
+    for (int i = 0; i < s_nagents; i++) if (s_agents[i].policy.fetched_at > newest) newest = s_agents[i].policy.fetched_at;
+    return newest;
+}
 static volatile bool s_policy_refresh_now;   // the brain saw the ENS records change
 static void on_ws_rx(const char *data, size_t len)
 {
@@ -228,14 +247,39 @@ static void on_ws_rx(const char *data, size_t len)
 
 // Read the policy from ENS; keep the cached one when the network says no. Returns whether
 // what we hold is fresh enough to trust silently.
-static bool policy_refresh(bool *stale_out)
+// Re-reads every agent's name. One that answers with a blank policy is dropped on the spot:
+// that is the Ledger switching it off, and keeping its cached policy alive would defeat it.
+// One that cannot be reached keeps what it had, because a flat network is not permission.
+static bool agents_refresh(bool *stale_out)
 {
-    bool ok = ens_fetch_policy(&s_policy);
-    int64_t age = s_policy.fetched_at ? (int64_t)time(NULL) - s_policy.fetched_at : INT64_MAX;
-    bool stale = !s_policy.valid || (!ok && age > AMULET_POLICY_STALE_S);
-    s_policy.stale = stale;
+    static const char *labels[] = AMULET_AGENT_LABELS;
+    agent_t next[AGENT_MAX];
+    int n = 0;
+    bool all_read = true;
+    for (size_t i = 0; i < sizeof labels / sizeof labels[0] && n < AGENT_MAX; i++) {
+        agent_t a;
+        bool revoked = false;
+        if (ens_fetch_agent(labels[i], &a, &revoked)) {
+            next[n++] = a;
+        } else if (revoked) {
+            all_read = false;                       // deliberately dropped, not carried over
+            ESP_LOGW(TAG, "%s is revoked: the wrist will refuse everything it sends", labels[i]);
+        } else {
+            all_read = false;
+            const agent_t *old = agent_find(labels[i]);
+            if (old) next[n++] = *old;              // unreachable: keep what we last saw
+        }
+    }
+    memcpy(s_agents, next, sizeof(agent_t) * (size_t)n);
+    s_nagents = n;
+    if (n) ens_save_cached(s_agents, n);
+
+    int64_t newest = agents_fetched_at();
+    int64_t age = newest ? (int64_t)time(NULL) - newest : INT64_MAX;
+    bool stale = n == 0 || (!all_read && age > AMULET_POLICY_STALE_S);
+    for (int i = 0; i < n; i++) s_agents[i].policy.stale = stale;
     if (stale_out) *stale_out = stale;
-    return ok;
+    return all_read && n > 0;
 }
 
 // Signs one proposal on the Ledger and broadcasts it. Returns true when it lands.
@@ -507,10 +551,14 @@ void app_main(void)
     // Policy: the last copy from NVS first (boots with no network still enforce it), then a
     // fresh read from the ENS name (six eth_calls, ~45 s; the brain link comes up meanwhile
     // and any proposal simply waits in s_pending). HOME says when neither is recent.
-    if (ens_load_cached(&s_policy)) ESP_LOGI(TAG, "policy v%u from NVS (%u targets)", s_policy.version, s_policy.nallowed);
-    policy_refresh(&st.policy_stale);
+    s_nagents = ens_load_cached(s_agents, AGENT_MAX);
+    if (s_nagents) ESP_LOGI(TAG, "%d agent(s) from NVS", s_nagents);
+    agents_refresh(&st.policy_stale);
     ui_set_status(&st);
-    if (!s_policy.valid) ESP_LOGW(TAG, "no policy yet: every tier-1/2 proposal will be refused until %s answers", AMULET_POLICY_NAME);
+    for (int i = 0; i < s_nagents; i++)
+        ESP_LOGI(TAG, "agent %s.%s: cap set, %u targets%s", s_agents[i].label, AMULET_ENS_PARENT,
+                 s_agents[i].policy.nallowed, s_agents[i].has_face ? ", has a face" : "");
+    if (!s_nagents) ESP_LOGW(TAG, "no agents yet: every tier-1/2 proposal will be refused until %s answers", AMULET_ENS_PARENT);
     time_t policy_tried = time(NULL);
 
 #if AMULET_FAKE_PROPOSAL
@@ -562,13 +610,14 @@ void app_main(void)
         // minutes. Not while the Ledger is mid-signature or pairing: that path owns the radio.
         if (ui_state() != UI_LEDGER_WAIT && ui_state() != UI_PAIRING) {
             time_t now = time(NULL);
-            int64_t since_ok = s_policy.fetched_at ? (int64_t)now - s_policy.fetched_at : INT64_MAX;
+            int64_t newest = agents_fetched_at();
+            int64_t since_ok = newest ? (int64_t)now - newest : INT64_MAX;
             if (s_policy_refresh_now || (since_ok > AMULET_POLICY_REFRESH_S && now - policy_tried > 300)) {
                 if (s_policy_refresh_now) ESP_LOGI(TAG, "brain says the policy changed; re-reading");
                 s_policy_refresh_now = false;
                 policy_tried = now;
                 bool stale;
-                policy_refresh(&stale);
+                agents_refresh(&stale);
                 if (stale != st.policy_stale) { st.policy_stale = stale; ui_set_status(&st); }
             }
         }
@@ -584,6 +633,18 @@ void app_main(void)
                 ui_show_options(&s_options);
             }
         }
+        if (ui_state() == UI_AGENT) {
+            if (ui_take_tap()) {
+                ui_show_proposal(&s_pending);
+            } else if (ui_take_reject()) {
+                send_decision(s_pending.id, "rejected", NULL);
+                ui_show_dismissed(false);
+                s_have_pending = false;
+                vTaskDelay(pdMS_TO_TICKS(1800));
+                ui_show_home();
+            }
+        }
+
         if (ui_state() == UI_OPTIONS) {
             int idx;
             char msg[128];
@@ -607,12 +668,16 @@ void app_main(void)
             }
         }
 
-        if (take_pending_flag() && ui_state() != UI_PROPOSAL) {
+        if (take_pending_flag() && ui_state() != UI_PROPOSAL && ui_state() != UI_AGENT) {
             // Policy first. Out of policy: answer the brain, show why, never arm — the
             // Ledger never sees it.
             char reason[POLICY_REASON_LEN];
-            if (!policy_within(&s_policy, &s_pending, (int64_t)time(NULL), reason, sizeof reason)) {
-                ESP_LOGW(TAG, "proposal %s REFUSED by policy: %s (%s)", s_pending.id, reason, s_pending.human);
+            // Whose proposal is this? An agent the pendant does not know gets no further,
+            // and the screen says so by name.
+            const agent_t *ag = agent_find(s_pending.agent);
+            if (!ag) snprintf(reason, sizeof reason, s_pending.agent[0] ? "Unknown agent" : "Proposal has no agent");
+            if (!ag || !policy_within(&ag->policy, &s_pending, (int64_t)time(NULL), reason, sizeof reason)) {
+                ESP_LOGW(TAG, "proposal %s from '%s' REFUSED: %s (%s)", s_pending.id, s_pending.agent, reason, s_pending.human);
                 send_decision(s_pending.id, "policy_reject", NULL);
                 ui_attention(2);
                 ui_show_policy_reject(reason);
@@ -620,8 +685,12 @@ void app_main(void)
                 vTaskDelay(pdMS_TO_TICKS(3000));
                 ui_show_home();
             } else {
+                // Who is asking comes first. The amount is not on screen until the wearer
+                // has seen the face and tapped through.
+                ui_set_agent(ag);
                 ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
-                ui_show_proposal(&s_pending);
+                if (ag && ag->has_face) ui_show_agent(ag);
+                else ui_show_proposal(&s_pending);
             }
         }
 

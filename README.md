@@ -53,7 +53,7 @@ Amulet makes the human-in-the-loop a **physical object with one job**. Roughly 1
 |---|---|---|
 | **Ledger** | Pendant implements the Ledger BLE APDU transport natively on ESP32-S3 and drives the Ethereum app (`GET PUBLIC KEY`, `SIGN TX`, and the EIP-712 typed-data commands so the device reads the action in words instead of blind-signing bytes). Brain secrets are encrypted under the Ledger Key Ring (`wallet-cli ring`) and decrypted at boot on a host with no USB. The Ledger account is the only one that can edit the agent's policy. | `firmware/main/ledger/`, `contracts/src/AmuletAccount.sol`, `docs/LEDGER_FEEDBACK.md` |
 | **The Graph** | Messari standardized lending subgraphs supply live market conditions; one query shape runs against three pinned deployments (Aave v3, Compound v3, Spark) to rank an asset's supply rate across protocols; Substreams is the agent's clock (one tick per block); a custom subgraph on Subgraph Studio indexes the agent's own actions. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | `brain/src/data/graph/`, `subgraph/` |
-| **ENS** | The agent lives at `guardian.<you>.eth` on ENSv2 Sepolia. Its policy (allowed contracts, max value, thresholds) is text records on a permissioned resolver. Enhanced Access Control gives the Ledger the policy-admin role and the brain a status-only role. The brain cannot raise its own limits. Revoking the subname is the kill switch. | `firmware/main/ens/`, `brain/src/ens/` |
+| **ENS** | Every agent lives at its own subname on ENSv2 Sepolia, with its own limits and its own face. Its policy (allowed contracts, max value, thresholds) is text records on a permissioned resolver. Enhanced Access Control gives the Ledger the policy-admin role and the brain a status-only role. The brain cannot raise its own limits. Revoking the subname is the kill switch. | `firmware/main/ens/`, `brain/src/ens/` |
 
 ## The policy on ENS
 
@@ -70,9 +70,54 @@ Records (`amulet.version chain allowed max_value_wei max_token_usd tier1_hf tier
 ```
 pnpm amulet ens show                      # records as any wallet reads them, plus who may edit what
 pnpm amulet ens set max_value_wei 2e16    # lower the cap (Ledger role); brain and pendant follow
-pnpm amulet attack --value 5              # compromised brain: pendant answers policy_reject
+pnpm amulet attack --value 5              # a request that reads fine; the pendant refuses it anyway
 pnpm amulet attack --raise-limit          # hot key tries to edit the policy: reverts
 ```
+
+## One agent, one name, one face
+
+An agent with no name is just a process on a server you do not control. So each agent gets a
+real subname under the parent, and everything about it lives there:
+
+| | `repay.amuletguard.eth` | `yield.amuletguard.eth` |
+|---|---|---|
+| may touch | Sim-A | Sim-B only |
+| may call | `repay`, `supply` | `supply` only |
+| cap per action | 0.05 ETH | 0.01 ETH |
+| face | a guard robot, green | a sprout, gold |
+
+The pendant reads each name at boot and hourly and holds one policy per agent. A proposal says
+which agent it comes from, and it is checked against **that agent's** limits. The same 0.02 ETH
+request is refused when it claims to be `yield` and allowed when it claims to be `repay` — the
+name is not decoration, it is the permission boundary. A proposal from a name the pendant does
+not know is refused outright.
+
+Before the amount is ever on screen, the pendant shows the agent's face and its name and waits
+for a tap. You decide about the agent first and the money second. A swipe there dismisses it
+without the request being shown at all.
+
+The face is a 16×16 drawing and a colour — 48 characters of base64 in an `amulet.face` record,
+small enough that the pendant reads it from the chain itself rather than being handed it by the
+brain. The same drawing is written to the standard `avatar` record as an SVG, so a wallet shows
+the agent the way the wrist does.
+
+The Ledger holds the text-record admin role on each name separately, so it can loosen one
+agent, or let one lapse, without touching the other. Blanking a name's policy is the off switch
+for that agent alone: the pendant tells an empty record apart from an unreachable network, and
+drops the agent rather than keeping its cached limits alive.
+
+```
+pnpm amulet demo                     # one key per scenario, pendant stays connected
+pnpm amulet ens agent all            # issue the names, limits, faces and avatars
+pnpm amulet run --agent yield        # run as that agent, held to that name's limits
+pnpm amulet attack --as yield --value 0.02   # over yield's cap: refused on the wrist
+pnpm amulet attack --value 0.02              # no name at all: refused outright
+pnpm amulet ens revoke yield         # blank its policy; the wrist stops listening to it
+```
+
+Not yet done: a proposal is not signed by the agent's own key, so a compromised brain could put
+another agent's name on its request. The `amulet.brain` record already names each agent's key;
+verifying it on the device is the next step.
 
 ## What the Ledger actually reads
 
@@ -103,10 +148,10 @@ pays the gas. It can refuse to send it; it cannot alter a word of it, and the ac
 kills the signature after one use. The owner can always sweep the balance back out.
 
 The Nano X needs **Verbose EIP712** on in the Ethereum app; otherwise it shows the domain and a
-hash. The raw-transaction path still works and is what runs without `--clear`.
+hash. Typed data is the default whenever the account and a relayer are configured; `--raw` puts the old blind-signed transaction back for comparison.
 
 ```
-pnpm amulet run --clear                 # the loop, signing intents
+pnpm amulet run                         # the loop; typed data whenever the account is there
 pnpm amulet intent Supply 0.01          # one hand-made intent
 ```
 

@@ -107,6 +107,33 @@ export const POLICY_KEYS = [
 ] as const;
 export const STATUS_KEYS = ["amulet.status", "amulet.last-action"] as const;
 
+// One agent, one name. Each agent the brain can run as is a subname of the parent with its
+// own policy records and its own avatar, so the wrist can see which of them is asking and
+// each one is held to its own limits. An agent with no name is refused outright.
+// Each one is held to different limits on purpose: the repay agent may touch the market the
+// position lives in, the yield scout may only move a small slice into the second market. The
+// limits are records on that agent's own name, so the Ledger can loosen one without loosening
+// the other, and can let one lapse without touching the other.
+export const AGENTS = {
+  repay: {
+    label: "repay",
+    title: "Repay bot",
+    caps: { max_value_wei: 50_000_000_000_000_000n, targets: ["simA"] as const, selectors: ["repay", "supply"] as const },
+  },
+  yield: {
+    label: "yield",
+    title: "Yield scout",
+    caps: { max_value_wei: 10_000_000_000_000_000n, targets: ["simB"] as const, selectors: ["supply"] as const },
+  },
+} as const;
+export type AgentKey = keyof typeof AGENTS;
+export const DEFAULT_AGENT: AgentKey = "repay";
+export const agentName = (a: string): string => `${a}.${ENS.parentLabel}.eth`;
+export const AVATAR_KEY = "avatar";
+// The face the pendant draws, square, 16-bit colour. Small on purpose: it travels in one
+// websocket message and lives in the pendant's memory beside the policy.
+export const AVATAR_PX = 32;
+
 export interface EnsDeployment {
   chainId: number;
   name: string;

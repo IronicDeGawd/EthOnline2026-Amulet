@@ -59,6 +59,7 @@ bool proposal_parse(const char *json, size_t len, amulet_proposal_t *out, char *
     if (!cJSON_IsString(type) || strcmp(type->valuestring, "proposal") != 0) FAIL("not a proposal");
 
     if (!str_field(root, "id", out->id, sizeof out->id)) FAIL("missing id");
+    str_field(root, "agent", out->agent, sizeof out->agent);   // absent = unnamed, refused later
     if (!str_field(root, "human", out->human, sizeof out->human)) FAIL("missing human text");
     str_field(root, "action", out->action, sizeof out->action);          // optional
     str_field(root, "rationale", out->rationale, sizeof out->rationale); // optional

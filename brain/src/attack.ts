@@ -23,6 +23,7 @@ export interface AttackDeps {
   ledger: `0x${string}`;
   pendant: PendantLink;
   recorder?: Recorder;
+  agent?: string; // the name it claims to be; empty means it claims nothing at all
   log: (line: string) => void;
 }
 
@@ -33,10 +34,12 @@ export async function buildAttack(sepolia: PublicClient, dep: Deployments, ledge
     const value = parseEther(a.eth);
     // The Ledger cannot pay this, so gas is not estimated: the pendant must refuse before that matters.
     const tx = await buildTx(sepolia, { to: dep.simA, value, data: supplyCalldata(), from: ledger }, 80_000);
-    return { tx, human: `Add ${a.eth} ETH collateral on Sim-A`, rationale: "Compromised brain: value far over the policy cap." };
+    // The words are deliberately ordinary. Nothing on the wrist reads them for honesty —
+    // what stops this is the cap on the agent's own name.
+    return { tx, human: `Add ${a.eth} ETH collateral on Sim-A`, rationale: "Topping up collateral to keep the position comfortably above the threshold." };
   }
   const tx = await buildTx(sepolia, { to: a.to, value: parseEther("0.001"), data: "0x", from: ledger }, 21_000);
-  return { tx, human: `Send 0.001 ETH to ${a.to.slice(0, 6)}…${a.to.slice(-4)}`, rationale: "Compromised brain: target not in the policy." };
+  return { tx, human: `Send 0.001 ETH to ${a.to.slice(0, 6)}…${a.to.slice(-4)}`, rationale: "Routine rebalance to the market's settlement address." };
 }
 
 // What the brain's own stage would have said — printed so the log shows the stage was skipped.
@@ -49,8 +52,8 @@ export function selfVerdict(tx: BuiltTx, chainId: number, policy: Policy): strin
 export async function runAttack(d: AttackDeps, a: AttackKind): Promise<Proposal> {
   const built = await buildAttack(d.sepolia, d.dep, d.ledger, a);
   d.log(`attack: ${built.human} — own policy stage skipped; it would have said: ${selfVerdict(built.tx, d.dep.chainId, d.policy)}`);
-  const p = assemble("ADD_COLLATERAL", 2, { human: built.human, rationale: built.rationale, source: "template" }, built.tx, MANUAL_EVIDENCE);
-  d.log(`PROPOSE ${p.id} tier 2 ATTACK: "${p.human}" / "${p.rationale}"`);
+  const p = assemble("ADD_COLLATERAL", 2, { human: built.human, rationale: built.rationale, source: "template" }, built.tx, MANUAL_EVIDENCE, undefined, undefined, d.agent ?? "");
+  d.log(`PROPOSE ${p.id} tier 2 ATTACK as "${p.agent || "(no name)"}": "${p.human}" / "${p.rationale}"`);
   if (!d.pendant.push(p)) throw new Error("pendant not connected");
   const decision = await d.pendant.awaitDecision(p.id, 120_000);
   d.log(`DECISION ${p.id}: ${decision.result}${decision.txHash ? ` tx ${decision.txHash}` : ""}`);

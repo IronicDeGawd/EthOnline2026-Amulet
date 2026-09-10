@@ -47,6 +47,7 @@ export interface BrainDeps {
   mainnetView?: () => Promise<string>; // read-only line about the user's real position
   yieldSource?: () => Promise<YieldTable>; // ranked venues for the position's asset
   relayer?: Relayer; // typed-data path: the wrist signs an intent, this carries it to chain
+  agent?: string; // the name this brain runs as; goes into every proposal it sends
   log: (line: string) => void;
   simulate?: Simulation;
   once?: boolean; // stop after the first decision
@@ -255,10 +256,10 @@ export class Brain {
         d.log(`account nonce unreadable, falling back to a raw transaction: ${(e as Error).message.split("\n")[0]}`);
       }
     }
-    const p = assemble(c.action, tier, text, tx, evidence, undefined, intent);
+    const p = assemble(c.action, tier, text, tx, evidence, undefined, intent, d.agent);
     this.pending = p;
     this.setState("proposing");
-    d.log(`PROPOSE ${p.id} tier ${tier} ${c.rule} → ${c.action}: "${p.human}" / "${p.rationale}" [${text.source}${text.reason ? `; ${text.reason}` : ""}]`);
+    d.log(`PROPOSE ${p.id} [${p.agent}] tier ${tier} ${c.rule} → ${c.action}: "${p.human}" / "${p.rationale}" [${text.source}${text.reason ? `; ${text.reason}` : ""}]`);
     if (!d.pendant.push(p)) {
       d.log("pendant not connected; proposal dropped");
       this.pending = undefined;

@@ -26,8 +26,11 @@ typedef struct {
     uint8_t  account[20];         // the AmuletAccount that verifies the signature
 } amulet_intent_t;
 
+#define PROP_AGENT_LEN 16
+
 typedef struct {
     char     id[PROP_ID_LEN];
+    char     agent[PROP_AGENT_LEN];      // which named agent is asking; "" means it did not say
     uint8_t  tier;                       // 0 advisory, 1 small pre-approved, 2 full
     char     action[PROP_ACTION_LEN];    // REPAY_DEBT, ADD_COLLATERAL, SWAP, ...
     char     human[PROP_TEXT_LEN];       // one line, shown large

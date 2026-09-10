@@ -131,3 +131,48 @@ bool policy_within(const policy_t *p, const amulet_proposal_t *q, int64_t now_un
     if (q->expires_at && now_unix && now_unix > q->expires_at) { say(reason, cap, "Proposal already expired"); return false; }
     return true;
 }
+
+// ---- agents ---------------------------------------------------------------------------------
+
+static int b64val(char c)
+{
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+// base64 to bytes, stopping at padding or the end of the buffer. Returns bytes written.
+static size_t b64decode(const char *in, uint8_t *out, size_t cap)
+{
+    size_t n = 0;
+    uint32_t acc = 0;
+    int bits = 0;
+    for (; *in && *in != '='; in++) {
+        int v = b64val(*in);
+        if (v < 0) continue;              // whitespace and stray characters are skipped
+        acc = (acc << 6) | (uint32_t)v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            if (n == cap) return n;
+            out[n++] = (uint8_t)((acc >> bits) & 0xff);
+        }
+    }
+    return n;
+}
+
+bool face_parse(const char *b64, agent_t *out)
+{
+    out->has_face = false;
+    if (!b64 || !*b64) return false;
+    uint8_t raw[FACE_RECORD_MIN + FACE_BYTES];
+    size_t n = b64decode(b64, raw, sizeof raw);
+    if (n < FACE_RECORD_MIN + FACE_BYTES) return false;
+    out->colour = ((uint32_t)raw[0] << 16) | ((uint32_t)raw[1] << 8) | raw[2];
+    memcpy(out->face, raw + FACE_RECORD_MIN, FACE_BYTES);
+    out->has_face = true;
+    return true;
+}
