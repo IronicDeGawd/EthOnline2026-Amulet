@@ -9,7 +9,8 @@
 import { Command } from "commander";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
-import { isAddress, parseAbi, type Hex } from "viem";
+import { isAddress, parseAbi, parseEther, toHex, type Hex } from "viem";
+import { ulid } from "ulid";
 import { sepolia as sepoliaChain } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { ENS, LEDGER_ADDRESS, PENDANT_PORT, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, loadDeployments, loadEnsDeployment, type Deployments } from "../config.js";
@@ -17,6 +18,7 @@ import { deployerSigner, ensSetup, revertReason, signerFromKey, writeRecords } f
 import { readPolicy, readRecords, type PolicyRead } from "../ens/resolver.js";
 import { makeStatusWriter, type StatusWriter } from "../ens/status.js";
 import { formatView, readMainnetView } from "../chain/account.js";
+import { accountBalance, accountNonce, makeRelayer, type Relayer } from "../chain/account712.js";
 import { runAttack, type AttackKind } from "../attack.js";
 import { fetchYieldTable, formatTable, YIELD_ASSET } from "../data/graph/yield.js";
 import { RESOLVER_ABI } from "../ens/abi.js";
@@ -64,7 +66,7 @@ async function setPrice(sim: `0x${string}`, price: bigint, rpc: string, key: Hex
   log(`  tx ${hash}`);
 }
 
-async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean }) {
+async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; clear?: boolean }) {
   const s = await loadSecrets();
   const dep = loadDeployments();
   const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
@@ -95,12 +97,24 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   const mainnetView = async () => formatView(await readMainnetView(mainnet));
   const yieldSource = () => fetchYieldTable(graph, mainnet, YIELD_ASSET);
 
+  // Typed data: the Ledger reads the intent instead of blind-signing bytes. The account holds
+  // the position; this process only carries the signature and pays the gas.
+  let relayer: Relayer | undefined;
+  if (opts.clear) {
+    if (!dep.amuletAccount) throw new Error("no amuletAccount in the deployments file");
+    if (!s.BRAIN_LOG_PK) throw new Error("--clear needs BRAIN_LOG_PK to relay");
+    relayer = makeRelayer(rpc, s.BRAIN_LOG_PK as `0x${string}`);
+    const [n, bal] = await Promise.all([accountNonce(sepolia, dep.amuletAccount), accountBalance(sepolia, dep.amuletAccount)]);
+    log(`clear signing on: account ${dep.amuletAccount} nonce ${n} balance ${Number(bal) / 1e18} ETH, relayed by ${relayer.address}`);
+    log("the Nano X needs \"Verbose EIP712\" on in the Ethereum app, or it shows the domain and a hash");
+  }
+
   const pendant = new PendantLink();
   await pendant.listen(opts.port);
   log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)`);
   log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
   const simulate = (await parseSimulate(opts.simulate, dep, rpc, deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
-  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, log, simulate, once: opts.once });
+  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, relayer, log, simulate, once: opts.once });
   process.on("SIGINT", () => { brain.stop(); pendant.close(); process.exit(0); });
   await brain.run();
   pendant.close();
@@ -114,13 +128,15 @@ program.command("run").description("watch, propose, record")
   .option("--no-llm", "template text instead of Nova Lite")
   .option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
-  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: o.once, ens: o.ens }));
+  .option("--clear", "typed-data signing: the Ledger shows the action in words")
+  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: o.once, ens: o.ens, clear: o.clear }));
 
 program.command("propose").description("one proposal, then exit")
   .requiredOption("--simulate <what>", "hf=1.15 | price_drop | util_spike | yield")
   .option("--no-llm").option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
-  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: true, ens: o.ens }));
+  .option("--clear", "typed-data signing: the Ledger shows the action in words")
+  .action((o) => boot({ llm: o.llm, port: Number(o.port), simulate: o.simulate, once: true, ens: o.ens, clear: o.clear }));
 
 program.command("stale").description("pin a wrong deployment so the freshness gate trips")
   .requiredOption("--deployment <Qm>").option("--port <n>", "pendant port", String(PENDANT_PORT))
@@ -186,6 +202,54 @@ program.command("setprice").description("testnet lever: move the sim's price so 
     const dep = loadDeployments();
     const sim = o.sim === "simB" ? dep.simB : dep.simA;
     await setPrice(sim, BigInt(price), requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log));
+  });
+
+program.command("intent").description("push one typed-data intent to the pendant: the Ledger reads it in words")
+  .argument("<action>", "Supply | Repay | Withdraw | Borrow")
+  .argument("<amount>", "ETH for Supply/Repay/Withdraw, sUSDC units for Borrow")
+  .option("--sim <s>", "simA | simB", "simA")
+  .option("--port <n>", "pendant port", String(PENDANT_PORT))
+  .action(async (action: string, amount: string, o) => {
+    if (!["Supply", "Repay", "Withdraw", "Borrow"].includes(action)) throw new Error(`unknown action ${action}`);
+    const s = await loadSecrets();
+    const dep = loadDeployments();
+    const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
+    const sepolia = sepoliaClient(rpc);
+    if (!dep.amuletAccount) throw new Error("no amuletAccount in the deployments file");
+    const relayer = makeRelayer(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`);
+    const units = action === "Borrow" ? BigInt(amount) : parseEther(amount);
+    const market = (o.sim === "simB" ? dep.simB : dep.simA) as `0x${string}`;
+    const simName = o.sim === "simB" ? "Sim-B" : "Sim-A";
+    const unit = action === "Borrow" ? `${Number(units) / 1e6} sUSDC` : `${amount} ETH`;
+    const intent = {
+      summary: `${action} ${unit} on ${simName}`, action, market,
+      amount: toHex(units), nonce: toHex(await accountNonce(sepolia, dep.amuletAccount)),
+      deadline: toHex(BigInt(Math.floor(Date.now() / 1000) + 900)), account: dep.amuletAccount,
+    };
+    const pendant = new PendantLink();
+    await pendant.listen(Number(o.port));
+    log(`listening on ws://${lanIp()}:${o.port}; waiting for the pendant`);
+    await new Promise<void>((r) => { if (pendant.connected) r(); else pendant.once("connected", () => r()); });
+    await new Promise((r) => setTimeout(r, 1200));
+    const id = ulid();
+    const p = {
+      type: "proposal", id, tier: 2, action: "MOVE_SUPPLY", human: intent.summary,
+      rationale: "Typed data: the device reads this, it is not blind signing.",
+      tx: { chainId: dep.chainId, to: market, value: toHex(action === "Borrow" ? 0n : units), data: dep.selectors.supply, nonce: 0, maxFeePerGas: toHex(0n), maxPriorityFeePerGas: toHex(0n), gas: 90_000 },
+      evidence: { deploymentId: "manual", block: 0, queriedAt: 0, subgraph: "intent" },
+      expiresAt: Math.floor(Date.now() / 1000) + 600, intent,
+    };
+    log(`INTENT ${id}: ${intent.summary} (account ${dep.amuletAccount}, nonce ${BigInt(intent.nonce)})`);
+    if (!pendant.send(p)) throw new Error("pendant not connected");
+    const decision = await pendant.awaitDecision(id, 300_000);
+    log(`DECISION ${decision.result}${decision.signature ? " with a signature" : ""}`);
+    if (decision.result === "approved" && decision.signature) {
+      const hash = await relayer.relay(intent as never, decision.signature);
+      log(`relayed by ${relayer.address} → ${hash}`);
+      const r = await sepolia.waitForTransactionReceipt({ hash });
+      log(`mined in block ${r.blockNumber} status ${r.status} https://sepolia.etherscan.io/tx/${hash}`);
+    }
+    pendant.close();
   });
 
 program.command("attack").description("play a compromised brain: push an out-of-policy proposal, or try to raise the limit on ENS")

@@ -16,6 +16,7 @@ export const LEDGER_ADDRESS = "0x211828006b402e0aae8244fB95B362b9eFFf7736" as co
 
 export interface Deployments {
   chainId: number;
+  amuletAccount?: `0x${string}`;
   simA: `0x${string}`;
   simB: `0x${string}`;
   swapSim: `0x${string}`;
@@ -126,6 +127,10 @@ export function loadEnsDeployment(chainId = SEPOLIA_CHAIN_ID): EnsDeployment {
 }
 
 export const POLICY_REFRESH_TICKS = 10;
+
+// Typed-data signing: the Ledger reads an EIP-712 intent, so the device shows the sentence
+// instead of blind bytes. Off by default; --clear turns it on.
+export const INTENT_TTL_S = 900;
 
 // Yield card: re-rank venues every few ticks; the spread must hold this many mainnet
 // blocks before a card goes out; a dismissed card stays quiet for an hour.
