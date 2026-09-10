@@ -173,6 +173,16 @@ static bool take_pending_flag(void)
     portEXIT_CRITICAL(&s_pending_mux);
     return have;
 }
+// A yield card waiting to be shown; same handoff as a proposal.
+static amulet_options_t s_options;
+static volatile bool s_have_options;
+static bool take_options_flag(void)
+{
+    portENTER_CRITICAL(&s_pending_mux);
+    bool have = s_have_options;
+    portEXIT_CRITICAL(&s_pending_mux);
+    return have;
+}
 // The policy the wrist enforces, from ENS (ens/ens.c). Written and read on the main task
 // only: the check runs there, just before a proposal is shown, so a refresh can never be
 // half-applied under a check running on the websocket task.
@@ -185,6 +195,18 @@ static void on_ws_rx(const char *data, size_t len)
     if (len < 64) {   // tiny control message; the frame is not NUL-terminated
         char head[64]; memcpy(head, data, len); head[len] = 0;
         if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
+    }
+    // A yield card is not a proposal: nothing to sign until a row is tapped.
+    if (len > 20 && memmem(data, len < 40 ? len : 40, "\"options\"", 9)) {
+        amulet_options_t o;
+        if (!options_parse(data, len, &o, err, sizeof err)) { ESP_LOGW(TAG, "ignored card: %s", err); return; }
+        if (take_pending_flag() || s_have_options) { ESP_LOGW(TAG, "busy, dropped card %s", o.id); return; }
+        portENTER_CRITICAL(&s_pending_mux);
+        s_options = o;
+        s_have_options = true;
+        portEXIT_CRITICAL(&s_pending_mux);
+        ESP_LOGI(TAG, "yield card %s: %u venues for %s", o.id, o.n, o.asset);
+        return;
     }
     if (!proposal_parse(data, len, &p, err, sizeof err)) {
         ESP_LOGW(TAG, "ignored message: %s", err);
@@ -507,6 +529,40 @@ void app_main(void)
                 bool stale;
                 policy_refresh(&stale);
                 if (stale != st.policy_stale) { st.policy_stale = stale; ui_set_status(&st); }
+            }
+        }
+
+        // A yield card: show it, then relay the tap (pick) or the swipe (dismiss) to the brain.
+        // The pick becomes a normal proposal on the brain's side; nothing is signed from here.
+        if (take_options_flag() && ui_state() != UI_OPTIONS) {
+            if (options_expired(&s_options, (int64_t)time(NULL))) {
+                ESP_LOGW(TAG, "yield card %s expired before it was shown", s_options.id);
+                s_have_options = false;
+            } else {
+                ui_attention(1);
+                ui_show_options(&s_options);
+            }
+        }
+        if (ui_state() == UI_OPTIONS) {
+            int idx;
+            char msg[128];
+            if (ui_take_pick(&idx)) {
+                snprintf(msg, sizeof msg, "{\"type\":\"pick\",\"id\":\"%s\",\"idx\":%d}", s_options.id, idx);
+                if (!ws_send_text(msg)) ESP_LOGW(TAG, "pick not delivered: %s", msg);
+                s_have_options = false;
+                ui_show_picked(s_options.items[idx < s_options.n ? idx : 0].human);
+                vTaskDelay(pdMS_TO_TICKS(1200));
+                ui_show_home();
+            } else if (ui_take_reject()) {
+                snprintf(msg, sizeof msg, "{\"type\":\"dismiss\",\"id\":\"%s\"}", s_options.id);
+                if (!ws_send_text(msg)) ESP_LOGW(TAG, "dismiss not delivered: %s", msg);
+                s_have_options = false;
+                ui_show_dismissed(true);
+                vTaskDelay(pdMS_TO_TICKS(1800));
+                ui_show_home();
+            } else if (options_expired(&s_options, (int64_t)time(NULL))) {
+                s_have_options = false;
+                ui_show_home();
             }
         }
 

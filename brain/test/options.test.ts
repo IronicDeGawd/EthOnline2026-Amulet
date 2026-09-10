@@ -19,7 +19,8 @@ const row = (protocol: string, bps: number, depositUSD = 1e9): YieldRow => ({ pr
 
 // 0.05 ETH at $1,100: an $55 position.
 const pos: Position = {
-  sim: dep.simA, name: "Sim-A", collateralWei: 50_000_000_000_000_000n, debtUnits: 36_000_000n, price: 110_000_000_000n, ltBps: 8000, healthFactor: 1.78,
+  sim: dep.simA, user: "0x211828006b402e0aae8244fB95B362b9eFFf7736", name: "Sim-A",
+  collateralWei: 50_000_000_000_000_000n, debtUnits: 36_000_000n, price: 110_000_000_000n, ltBps: 8000, healthFactor: 1.78,
 };
 
 describe("YIELD_OPP rule", () => {
@@ -54,7 +55,7 @@ describe("options card", () => {
     expect(card.items[0].sim).toBe(dep.simB);
     expect(card.items[2].sim).toBe(dep.simA);
     expect(BigInt(card.items[0].valueWei)).toBe(MOVE_WEI);
-    expect(card.items[0].human).toBe("Spark WETH");
+    expect(card.items[0].human).toBe("Spark");
     expect(card.expiresAt).toBe(1_800_000_600);
     expect(filtered).toEqual([]);
   });

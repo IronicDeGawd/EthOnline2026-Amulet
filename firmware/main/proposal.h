@@ -39,6 +39,32 @@ typedef struct {
 // pendant can say WHY it refused rather than silently ignoring the brain.
 bool proposal_parse(const char *json, size_t len, amulet_proposal_t *out, char *err, size_t err_cap);
 
+// An options card: up to three venues for the same asset, ranked by the brain, already
+// filtered by the ENS policy. A tap picks one and the brain answers with a normal proposal.
+#define OPT_MAX        3
+#define OPT_NAME_LEN   24
+typedef struct {
+    uint8_t  idx;
+    char     protocol[12];
+    char     human[OPT_NAME_LEN];   // "Spark WETH"
+    uint32_t apy_bps;
+} amulet_option_t;
+
+typedef struct {
+    char     id[PROP_ID_LEN];
+    char     asset[8];
+    uint8_t  n;
+    amulet_option_t items[OPT_MAX];
+    char     footer[40];
+    char     deployment_id[PROP_TEXT_LEN];
+    uint64_t evidence_block;
+    int64_t  expires_at;
+} amulet_options_t;
+
+// Returns true only for a well-formed {type:"options"} message with 1..3 items.
+bool options_parse(const char *json, size_t len, amulet_options_t *out, char *err, size_t err_cap);
+bool options_expired(const amulet_options_t *o, int64_t now_unix);   // same rule as proposal_expired
+
 // True when expires_at has passed. now_unix of 0 means "clock unknown" and never expires,
 // so a pendant with no time source fails open rather than rejecting everything.
 bool proposal_expired(const amulet_proposal_t *p, int64_t now_unix);

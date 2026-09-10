@@ -12,7 +12,7 @@ import { optionLine } from "./llm.js";
 
 export const MAX_OPTIONS = 3;
 export const MOVE_WEI = 10_000_000_000_000_000n; // 0.01 ETH: a slice, not the position
-export const OPTIONS_FOOTER = "mainnet data · executed on sim";
+export const OPTIONS_FOOTER = "mainnet data, sim run"; // ASCII only: the font has no middle dot
 
 export interface OptionItem {
   idx: number;

@@ -52,7 +52,7 @@ Amulet makes the human-in-the-loop a **physical object with one job**. Roughly 1
 | Sponsor | Role | Where |
 |---|---|---|
 | **Ledger** | Pendant implements the Ledger BLE APDU transport natively on ESP32-S3 and drives the Ethereum app (`GET PUBLIC KEY`, `SIGN TX`). Brain secrets are encrypted under the Ledger Key Ring (`wallet-cli ring`) and decrypted at boot on a host with no USB. The Ledger account is the only one that can edit the agent's policy. | `firmware/main/ledger/`, `brain/src/secrets/`, `docs/LEDGER_FEEDBACK.md` |
-| **The Graph** | Messari standardized lending subgraphs supply live market conditions; Substreams is the agent's clock (one tick per block); a custom subgraph on Subgraph Studio indexes the agent's own actions. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | `brain/src/data/graph/`, `subgraph/` |
+| **The Graph** | Messari standardized lending subgraphs supply live market conditions; one query shape runs against three pinned deployments (Aave v3, Compound v3, Spark) to rank an asset's supply rate across protocols; Substreams is the agent's clock (one tick per block); a custom subgraph on Subgraph Studio indexes the agent's own actions. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | `brain/src/data/graph/`, `subgraph/` |
 | **ENS** | The agent lives at `guardian.<you>.eth` on ENSv2 Sepolia. Its policy (allowed contracts, max value, thresholds) is text records on a permissioned resolver. Enhanced Access Control gives the Ledger the policy-admin role and the brain a status-only role. The brain cannot raise its own limits. Revoking the subname is the kill switch. | `firmware/main/ens/`, `brain/src/ens/` |
 
 ## The policy on ENS
@@ -72,6 +72,17 @@ pnpm amulet ens show                      # records as any wallet reads them, pl
 pnpm amulet ens set max_value_wei 2e16    # lower the cap (Ledger role); brain and pendant follow
 pnpm amulet attack --value 5              # compromised brain: pendant answers policy_reject
 pnpm amulet attack --raise-limit          # hot key tries to edit the policy: reverts
+```
+
+## Yield opportunities
+
+One Messari lending query runs against three pinned deployments (Aave v3, Compound v3, Spark), each through the same freshness gate, and the asset's supply rates are ranked. When another venue beats the one the position sits in by more than the ENS record `amulet.yield_delta_bps`, and holds that lead for 20 mainnet blocks with ten times the position in deposits, the pendant gets an **options card**: up to three venues, best first, with a footer that says the data is mainnet and the execution is a Sepolia sim.
+
+Nothing is built until a row is tapped. A tap sends the choice back, the brain turns that row into an ordinary tier-2 proposal ("Supply 0.01 ETH on Sim-B"), and it goes through the same policy check, the same hold, the same Ledger tap. A swipe dismisses the card and the idea stays quiet for an hour. A venue whose sim is not in `amulet.allowed` is never listed, so the Ledger decides which venues the agent may ever move into.
+
+```
+pnpm amulet yield [--asset WETH]        # the ranked table, with deployment ids and blocks
+pnpm amulet run --simulate yield        # a card on the wrist right now
 ```
 
 ## What the LLM does and does not decide

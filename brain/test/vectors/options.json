@@ -9,7 +9,7 @@
       "protocol": "Spark",
       "market": "Spark WETH",
       "apyBps": 397,
-      "human": "Spark WETH",
+      "human": "Spark",
       "sim": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
       "simName": "Sim-B",
       "valueWei": "0x2386f26fc10000"
@@ -19,7 +19,7 @@
       "protocol": "Compound",
       "market": "Compound WETH",
       "apyBps": 300,
-      "human": "Compound WETH",
+      "human": "Compound",
       "sim": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
       "simName": "Sim-B",
       "valueWei": "0x2386f26fc10000"
@@ -29,13 +29,13 @@
       "protocol": "Aave",
       "market": "Aave WETH",
       "apyBps": 147,
-      "human": "Aave WETH",
+      "human": "Aave",
       "sim": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
       "simName": "Sim-A",
       "valueWei": "0x2386f26fc10000"
     }
   ],
-  "footer": "mainnet data · executed on sim",
+  "footer": "mainnet data, sim run",
   "evidence": {
     "deploymentId": "QmTVumjhubXWP8MeDx5g114MRX99E4Gie5mFqVurttF99X",
     "block": 25945312,

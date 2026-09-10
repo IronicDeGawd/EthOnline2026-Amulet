@@ -52,10 +52,11 @@ export function templateFor(c: Candidate): Explanation {
   }
 }
 
-// One row of the options card: what the wrist prints beside the rate.
+// One row of the options card: the venue. The asset is in the card's title and the row is
+// 88 px wide, so "Compound", not "Compound V3 WETH - Wrapped Ether".
 export function optionLine(protocol: string, market: string): string {
-  const short = market.replace(/^(Aave|Compound|Spark)( V\d| Ethereum)?\s*/i, "").split(" - ")[0].trim();
-  return `${protocol} ${short}`.slice(0, 24);
+  void market;
+  return protocol.slice(0, 12);
 }
 
 export function buildPrompt(c: Candidate, ev: Evidence): { system: string; user: string } {
