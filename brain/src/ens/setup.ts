@@ -54,12 +54,12 @@ export function signerFromKey(rpcUrl: string, pk: Hex): Signer {
 export const dnsName = (name: string): Hex => toHex(packetToBytes(normalize(name)));
 export const policyNode = (): Hex => namehash(normalize(POLICY_NAME));
 
-function loadState(): SetupState {
-  return existsSync(STATE_FILE) ? (JSON.parse(readFileSync(STATE_FILE, "utf8")) as SetupState) : {};
+function loadState(file: string): SetupState {
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as SetupState) : {};
 }
-function saveState(s: SetupState): void {
-  mkdirSync(resolve(STATE_FILE, ".."), { recursive: true });
-  writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
+function saveState(s: SetupState, file: string): void {
+  mkdirSync(resolve(file, ".."), { recursive: true });
+  writeFileSync(file, JSON.stringify(s, null, 2));
 }
 
 interface Call { address: `0x${string}`; abi: readonly unknown[]; functionName: string; args?: readonly unknown[] }
@@ -89,13 +89,16 @@ export interface SetupOptions {
   records: Record<string, string>;
   noSubregistry?: boolean;
   log: (line: string) => void;
+  paths?: { state: string; deployment: string }; // tests point these at a temp dir
 }
 
 export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeployment> {
   const { log } = o;
   const ledger = o.ledger ?? LEDGER_ADDRESS;
   const parent = `${ENS.parentLabel}.eth`;
-  const st = loadState();
+  const stateFile = o.paths?.state ?? STATE_FILE;
+  const deploymentFile = o.paths?.deployment ?? ENS_DEPLOYMENT_FILE;
+  const st = loadState(stateFile);
   const registrar = { address: ENS.ethRegistrar, abi: REGISTRAR_ABI } as const;
 
   const [minAge, minDur, available, decimals] = await Promise.all([
@@ -114,7 +117,7 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
       args: [s.account.address, adm(PR.SET_ADDR | PR.SET_TEXT | PR.SET_CONTENTHASH | PR.SET_NAME | PR.SET_ALIAS | PR.CLEAR | PR.SET_DATA | PR.UPGRADE), []],
     });
     st.resolver = await deployProxy(s, log, ENS.resolverImpl, init, "resolver");
-    saveState(st);
+    saveState(st, stateFile);
   }
   log(`resolver ${st.resolver}`);
 
@@ -125,7 +128,7 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
       args: [s.account.address, adm(RR.REGISTRAR | RR.REGISTER_RESERVED | RR.SET_PARENT | RR.UNREGISTER | RR.RENEW | RR.SET_SUBREGISTRY | RR.SET_RESOLVER | RR.SET_URI | RR.UPGRADE)],
     });
     st.subregistry = await deployProxy(s, log, ENS.userRegistryImpl, init, "subregistry");
-    saveState(st);
+    saveState(st, stateFile);
   }
   const subregistry = (o.noSubregistry ? null : st.subregistry ?? null) as `0x${string}` | null;
   log(`subregistry ${subregistry ?? "none (wildcard on the parent's resolver)"}`);
@@ -143,7 +146,7 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
     if (bal < price) await send(s, log, "mint MockUSDC", { address: ENS.mockUsdc, abi: USDC_ABI, functionName: "mint", args: [s.account.address, price] });
     if (allowance < price) await send(s, log, "approve registrar", { address: ENS.mockUsdc, abi: USDC_ABI, functionName: "approve", args: [ENS.ethRegistrar, price] });
 
-    if (!st.secret) { st.secret = generatePrivateKey(); saveState(st); }
+    if (!st.secret) { st.secret = generatePrivateKey(); saveState(st, stateFile); }
     const commitment = await s.pub.readContract({
       ...registrar, functionName: "makeCommitment",
       args: [ENS.parentLabel, s.account.address, st.secret, subregistryArg, st.resolver, PARENT_DURATION_S, ZERO32],
@@ -153,7 +156,7 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
       await send(s, log, "commit", { ...registrar, functionName: "commit", args: [commitment] });
       at = await s.pub.readContract({ ...registrar, functionName: "commitmentAt", args: [commitment] });
     }
-    st.commitment = commitment; saveState(st);
+    st.commitment = commitment; saveState(st, stateFile);
     for (;;) {
       const now = (await s.pub.getBlock()).timestamp;
       if (now >= at + minAge) break;
@@ -164,12 +167,12 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
       ...registrar, functionName: "register",
       args: [ENS.parentLabel, s.account.address, st.secret, subregistryArg, st.resolver, PARENT_DURATION_S, ENS.mockUsdc, ZERO32],
     });
-    st.registered = true; saveState(st);
+    st.registered = true; saveState(st, stateFile);
   } else if (!available) {
     // Registered earlier (by us, or by someone else — the owner check below tells).
     const owner = await s.pub.readContract({ address: ENS.ethRegistry, abi: REGISTRY_ABI, functionName: "getOwner", args: [BigInt(labelhash(ENS.parentLabel))] });
     if (owner.toLowerCase() !== s.account.address.toLowerCase()) throw new Error(`${parent} is owned by ${owner}, not the deployer`);
-    st.registered = true; saveState(st);
+    st.registered = true; saveState(st, stateFile);
     const [res, sub] = await Promise.all([
       s.pub.readContract({ address: ENS.ethRegistry, abi: REGISTRY_ABI, functionName: "getResolver", args: [ENS.parentLabel] }),
       s.pub.readContract({ address: ENS.ethRegistry, abi: REGISTRY_ABI, functionName: "getSubregistry", args: [ENS.parentLabel] }),
@@ -193,10 +196,10 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
         ...reg, functionName: "register",
         args: [ENS.childLabel, s.account.address, "0x0000000000000000000000000000000000000000", st.resolver, adm(RR.RENEW | RR.SET_RESOLVER | RR.SET_SUBREGISTRY | RR.UNREGISTER) | RR.CAN_TRANSFER_ADMIN, BigInt(expiry)],
       });
-      st.childRegistered = true; saveState(st);
+      st.childRegistered = true; saveState(st, stateFile);
     } else {
       expiry = Number(existing);
-      st.childRegistered = true; saveState(st);
+      st.childRegistered = true; saveState(st, stateFile);
       // A lapsed name stops resolving; a re-run renews it rather than reporting success.
       const now = Number((await s.pub.getBlock()).timestamp);
       if (expiry <= now + 86_400) {
@@ -216,7 +219,7 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
     for (const k of STATUS_KEYS) {
       await send(s, log, `brain ← ${k}`, { ...rsv, functionName: "authorizeTextRoles", args: [dn, k, o.brain, true] });
     }
-    st.rolesGranted = true; saveState(st);
+    st.rolesGranted = true; saveState(st, stateFile);
   }
 
   // 6. The policy itself.
@@ -226,8 +229,8 @@ export async function ensSetup(s: Signer, o: SetupOptions): Promise<EnsDeploymen
     chainId: ENS.chainId, name: POLICY_NAME, node: policyNode(), parent, resolver: st.resolver, subregistry,
     ledger, brain: o.brain, deployer: s.account.address, expiry, commit: ENS.commit,
   };
-  writeFileSync(ENS_DEPLOYMENT_FILE, JSON.stringify(out, null, 2) + "\n");
-  log(`wrote ${ENS_DEPLOYMENT_FILE}`);
+  writeFileSync(deploymentFile, JSON.stringify(out, null, 2) + "\n");
+  log(`wrote ${deploymentFile}`);
   return out;
 }
 
