@@ -107,6 +107,7 @@ for that agent alone: the pendant tells an empty record apart from an unreachabl
 drops the agent rather than keeping its cached limits alive.
 
 ```
+pnpm amulet demo                     # one key per scenario, pendant stays connected
 pnpm amulet ens agent all            # issue the names, limits, faces and avatars
 pnpm amulet run --agent yield        # run as that agent, held to that name's limits
 pnpm amulet attack --as yield --value 0.02   # over yield's cap: refused on the wrist

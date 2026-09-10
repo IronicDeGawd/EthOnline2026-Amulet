@@ -22,6 +22,7 @@ import { makeStatusWriter, type StatusWriter } from "../ens/status.js";
 import { formatView, readMainnetView } from "../chain/account.js";
 import { accountBalance, accountNonce, makeRelayer, type Relayer } from "../chain/account712.js";
 import { runAttack, type AttackKind } from "../attack.js";
+import { MENU, runScenario, type DemoDeps } from "./demo.js";
 import { fetchYieldTable, formatTable, YIELD_ASSET } from "../data/graph/yield.js";
 import { RESOLVER_ABI } from "../ens/abi.js";
 import { agentPolicy, policyRecords } from "../engine/policy.js";
@@ -263,6 +264,50 @@ program.command("intent").description("push one typed-data intent to the pendant
       log(`mined in block ${r.blockNumber} status ${r.status} https://sepolia.etherscan.io/tx/${hash}`);
     }
     pendant.close();
+  });
+
+program.command("demo").description("one key per scenario, with the pendant connected the whole time")
+  .option("--port <n>", "pendant port", String(PENDANT_PORT))
+  .action(async (o) => {
+    const s = await loadSecrets();
+    const dep = loadDeployments();
+    const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
+    const sepolia = sepoliaClient(rpc);
+    if (!dep.amuletAccount) throw new Error("no amuletAccount in the deployments file");
+    const dk = deployerKey(s, log);
+    const relayer = makeRelayer(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`);
+    const pendant = new PendantLink();
+    await pendant.listen(Number(o.port));
+    log(`listening on ws://${lanIp()}:${o.port}`);
+    pendant.on("connected", () => log("pendant connected"));
+    pendant.on("disconnected", () => log("pendant away"));
+
+    const d: DemoDeps = {
+      sepolia, dep, policy: defaultPolicy(dep), pendant, relayer, ledger: LEDGER_ADDRESS,
+      setPrice: (p) => setPrice(dep.simA, p, rpc, dk),
+      setRecord: async (name, key, value) => {
+        await writeRecords(deployerSigner(rpc, dk), loadEnsDeployment().resolver, { [key]: value }, log, name);
+        pendant.send({ type: "policy" });
+      },
+      brainWrite: (name, key, value) =>
+        writeRecords(signerFromKey(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`), loadEnsDeployment().resolver, { [key]: value }, log, name),
+      log,
+    };
+
+    console.log(MENU);
+    process.stdin.setRawMode?.(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+    let busy = false;
+    process.stdin.on("data", (raw: string) => {
+      const k = raw.trim().toLowerCase();
+      if (k === "q" || raw === "\u0003") { pendant.close(); process.exit(0); }
+      if (k === "m") { console.log(MENU); return; }
+      if (busy) { log("still on the last one"); return; }
+      if (!"1234567890ps".includes(k) || !k) return;
+      busy = true;
+      runScenario(k, d).catch((e) => log(`failed: ${(e as Error).message.split("\n")[0]}`)).finally(() => { busy = false; });
+    });
   });
 
 program.command("attack").description("play a compromised brain: push an out-of-policy proposal, or try to raise the limit on ENS")
