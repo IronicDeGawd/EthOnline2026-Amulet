@@ -19,6 +19,16 @@ export interface ProposalTx {
   gas: number;
 }
 
+export interface Intent {
+  summary: string;
+  action: string;
+  market: `0x${string}`;
+  amount: `0x${string}`;
+  nonce: `0x${string}`;
+  deadline: `0x${string}`;
+  account: `0x${string}`;
+}
+
 export interface Proposal {
   type: "proposal";
   id: string;
@@ -29,6 +39,7 @@ export interface Proposal {
   tx: ProposalTx;
   evidence: Evidence;
   expiresAt: number;
+  intent?: Intent; // when set the pendant signs this as typed data, not the raw transaction
 }
 
 export interface BuiltTx {
@@ -48,6 +59,7 @@ export function assemble(
   tx: BuiltTx,
   evidence: Evidence,
   now = Math.floor(Date.now() / 1000),
+  intent?: Intent,
 ): Proposal {
   return {
     type: "proposal",
@@ -68,6 +80,7 @@ export function assemble(
     },
     evidence,
     expiresAt: now + PROPOSAL_TTL_S,
+    ...(intent ? { intent } : {}),
   };
 }
 

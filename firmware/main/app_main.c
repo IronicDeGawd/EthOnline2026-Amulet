@@ -16,6 +16,7 @@
 #include "ws.h"
 #include "ble_transport.h"
 #include "apdu_eth.h"
+#include "eip712.h"
 #include "keccak.h"
 #include "tx.h"
 #include "rpc.h"
@@ -239,6 +240,7 @@ static bool policy_refresh(bool *stale_out)
 
 // Signs one proposal on the Ledger and broadcasts it. Returns true when it lands.
 static char s_last_txh[67];   // full hash of the last broadcast, for the decision report
+static uint8_t s_last_sig[65];   // r||s||v of the last typed-data signature
 
 // Tells the brain what happened to a proposal. The brain gets a fact, never a signature it
 // could replay: result is one of approved | rejected | policy_reject | expired.
@@ -248,6 +250,45 @@ static void send_decision(const char *id, const char *result, const char *txh)
     snprintf(msg, sizeof msg, "{\"type\":\"decision\",\"id\":\"%s\",\"result\":\"%s\",\"txHash\":\"%s\"}",
              id, result, txh ? txh : "");
     if (!ws_send_text(msg)) ESP_LOGW(TAG, "decision not delivered (no brain link): %s", msg);
+}
+
+// The signature over a typed-data intent. The brain relays it; it holds no key that could
+// alter what was signed.
+static void send_signature(const char *id, const uint8_t sig[65])
+{
+    char hex[131 + 1];
+    for (int i = 0; i < 65; i++) snprintf(hex + i * 2, 3, "%02x", sig[i]);
+    char msg[256];
+    snprintf(msg, sizeof msg, "{\"type\":\"decision\",\"id\":\"%s\",\"result\":\"approved\",\"signature\":\"0x%s\"}", id, hex);
+    if (!ws_send_text(msg)) ESP_LOGW(TAG, "signature not delivered (no brain link)");
+}
+
+// The typed-data path: the Ledger shows the sentence and the figures, signs the intent, and
+// the pendant hands the signature back. Whoever relays it pays the gas and can change none of
+// it — the summary, the market, the amount, the nonce and the deadline are all inside the
+// signature. Returns true when the device signed.
+static bool sign_intent(const amulet_proposal_t *p, char *out, size_t out_cap)
+{
+    const amulet_intent_t *t = &p->intent;
+    eip712_action_t a = {
+        .summary = t->summary, .action = t->action, .chain_id = p->chain_id,
+    };
+    memcpy(a.market, t->market, 20);
+    memcpy(a.amount, t->amount, 32);
+    memcpy(a.nonce, t->nonce, 32);
+    memcpy(a.deadline, t->deadline, 32);
+    memcpy(a.verifying_contract, t->account, 20);
+    uint16_t sw = 0;
+    int rc = eip712_sign_action(ETH_PATH, 5, &a, s_last_sig, &sw);
+    if (rc != 0) {
+        // 0x6985 is the wearer saying no on the device; anything else is a real failure.
+        if (sw == 0x6985) snprintf(out, out_cap, "Ledger refused");
+        else if (sw == 0x6a80 || sw == 0x6501) snprintf(out, out_cap, "turn on Verbose EIP712");
+        else snprintf(out, out_cap, "sign failed 0x%04x", sw);
+        return false;
+    }
+    snprintf(out, out_cap, "signed, agent relaying");
+    return true;
 }
 
 static bool execute(const amulet_proposal_t *p, char *out, size_t out_cap)
@@ -603,11 +644,14 @@ void app_main(void)
         } else if (prop_confirm) {
             ui_show_ledger_wait("Confirm on your Nano X");
             char detail[64];
-            bool ok = execute(&s_pending, detail, sizeof detail);
+            bool intent = s_pending.intent.present;
+            bool ok = intent ? sign_intent(&s_pending, detail, sizeof detail)
+                             : execute(&s_pending, detail, sizeof detail);
             ui_show_result(ok, detail);
-            send_decision(s_pending.id, ok ? "approved" : "rejected", ok ? s_last_txh : NULL);
+            if (intent && ok) send_signature(s_pending.id, s_last_sig);
+            else send_decision(s_pending.id, ok ? "approved" : "rejected", ok ? s_last_txh : NULL);
             s_have_pending = false;
-            if (ok && rpc_get_nonce(addr, &st.nonce)) ui_set_status(&st);
+            if (ok && !intent && rpc_get_nonce(addr, &st.nonce)) ui_set_status(&st);
             vTaskDelay(pdMS_TO_TICKS(6000));
             ui_show_home();
         }

@@ -1,13 +1,14 @@
 // The loop. Once per tick: head block, Graph evidence through the freshness gate, guarded
 // position, rules, tier, policy, explanation, unsigned tx, push to the pendant, wait for
 // the wrist, record the outcome on AmuletLog. Holds no key that can move funds.
-import type { PublicClient } from "viem";
+import { toHex, type PublicClient } from "viem";
 import {
-  DEFAULT_COOLDOWN_MS, LEDGER_ADDRESS, POLICY_REFRESH_TICKS, PROPOSAL_TTL_S, RULE_COOLDOWN_MS, SUBGRAPHS, TICK_MS,
+  DEFAULT_COOLDOWN_MS, INTENT_TTL_S, LEDGER_ADDRESS, POLICY_REFRESH_TICKS, PROPOSAL_TTL_S, RULE_COOLDOWN_MS, SUBGRAPHS, TICK_MS,
   YIELD_HOLD_BLOCKS, YIELD_TICKS, type Deployments, type Policy,
 } from "./config.js";
 import type { YieldRow, YieldTable } from "./data/graph/yield.js";
 import { assembleOptions, pickCandidate } from "./engine/options.js";
+import { accountNonce, actionName, type Intent, type Relayer } from "./chain/account712.js";
 import { CURRENT_VENUE, positionUsd, YIELD_LIQUIDITY_X } from "./engine/rules.js";
 import { policyDiff, type PolicyRead } from "./ens/resolver.js";
 import type { BrainStatus, StatusWriter } from "./ens/status.js";
@@ -45,6 +46,7 @@ export interface BrainDeps {
   status?: StatusWriter; // amulet.status / amulet.last-action on ENS
   mainnetView?: () => Promise<string>; // read-only line about the user's real position
   yieldSource?: () => Promise<YieldTable>; // ranked venues for the position's asset
+  relayer?: Relayer; // typed-data path: the wrist signs an intent, this carries it to chain
   log: (line: string) => void;
   simulate?: Simulation;
   once?: boolean; // stop after the first decision
@@ -137,6 +139,11 @@ export class Brain {
     d.pendant.on("disconnected", () => d.log("pendant disconnected"));
   }
 
+  // Whose position the rules watch: the account when it is the one acting, else the Ledger.
+  private guarded(): `0x${string}` {
+    return this.d.relayer && this.d.dep.amuletAccount ? this.d.dep.amuletAccount : this.ledger;
+  }
+
   stop(): void { this.stopped = true; }
 
   async run(): Promise<void> {
@@ -180,8 +187,9 @@ export class Brain {
     if (weth) this.utilHistory.push({ block: fresh.evidence.block, snap: weth });
     if (this.utilHistory.length > 400) this.utilHistory.shift();
 
-    // 2. Position.
-    let pos = await readPosition(d.sepolia, d.dep.simA, this.ledger);
+    // 2. Position. With typed-data signing on, the position the agent guards is the one the
+    // account holds — that is what the Ledger's signature can move.
+    let pos = await readPosition(d.sepolia, d.dep.simA, this.guarded());
     if (d.simulate?.hf && Number.isFinite(pos.healthFactor)) pos = fakeHf(pos, d.simulate.hf);
 
     const past = d.simulate?.utilSpike && weth
@@ -231,7 +239,23 @@ export class Brain {
 
     // 6. Words, 7. proposal, push.
     const text = await d.explainer.explain(c, evidence);
-    const p = assemble(c.action, tier, text, tx, evidence);
+    // Typed data when a relayer and an account exist and the action is one the account knows.
+    // The wrist signs the intent, the Ledger shows it in words, and this process relays it.
+    let intent: Intent | undefined;
+    const kind = actionName(c.action);
+    if (d.relayer && d.dep.amuletAccount && kind && c.action !== "ADVISORY") {
+      try {
+        const n = await accountNonce(d.sepolia, d.dep.amuletAccount);
+        intent = {
+          summary: text.human, action: kind, market: c.sim,
+          amount: toHex(c.valueWei), nonce: toHex(n), deadline: toHex(BigInt(Math.floor(Date.now() / 1000) + INTENT_TTL_S)),
+          account: d.dep.amuletAccount,
+        };
+      } catch (e) {
+        d.log(`account nonce unreadable, falling back to a raw transaction: ${(e as Error).message.split("\n")[0]}`);
+      }
+    }
+    const p = assemble(c.action, tier, text, tx, evidence, undefined, intent);
     this.pending = p;
     this.setState("proposing");
     d.log(`PROPOSE ${p.id} tier ${tier} ${c.rule} → ${c.action}: "${p.human}" / "${p.rationale}" [${text.source}${text.reason ? `; ${text.reason}` : ""}]`);
@@ -255,6 +279,17 @@ export class Brain {
         }
       } catch (e) {
         d.log(`could not check Ledger nonce for expired decision: ${(e as Error).message.split("\n")[0]}`);
+      }
+    }
+    // A signature instead of a hash means the wrist signed an intent: relay it and pay the gas.
+    if (decision.result === "approved" && decision.signature && intent && d.relayer) {
+      try {
+        const hash = await d.relayer.relay(intent, decision.signature);
+        d.log(`relayed the signed intent from ${d.relayer.address} → ${hash}`);
+        decision = { ...decision, txHash: hash };
+      } catch (e) {
+        d.log(`relay failed: ${(e as Error).message.split("\n")[0]}`);
+        decision = { ...decision, result: "rejected" };
       }
     }
     this.pending = undefined;

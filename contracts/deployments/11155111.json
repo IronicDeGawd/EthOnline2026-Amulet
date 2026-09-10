@@ -9,6 +9,7 @@
   "selectors": {
     "borrow": "0xc5ebeaec",
     "exactInputSingle": "0x414bf389",
+    "execute": "0x400a8e44",
     "record": "0xee5e2b69",
     "repay": "0x402d8883",
     "setPrice": "0x91b7f5ed",
@@ -18,5 +19,6 @@
   "simA": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
   "simB": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
   "swapSim": "0xff79706c842E4421948Ae1e1050EE4594a4240E5",
-  "weth9Sentinel": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14"
+  "weth9Sentinel": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
+  "amuletAccount": "0x23cf5ab5486094e36f642b98c7c7d51d1c3f8253"
 }

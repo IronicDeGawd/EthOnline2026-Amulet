@@ -5,7 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import type { Proposal } from "../engine/proposal.js";
 
 export type DecisionResult = "approved" | "rejected" | "policy_reject" | "expired";
-export interface Decision { type: "decision"; id: string; result: DecisionResult; txHash?: string }
+export interface Decision { type: "decision"; id: string; result: DecisionResult; txHash?: string; signature?: `0x${string}` }
 export interface Presence { type: "presence"; uptime?: number; worn?: boolean; policyVersion?: number; address?: string }
 export type BrainState = "watching" | "proposing" | "stale" | "offline";
 
