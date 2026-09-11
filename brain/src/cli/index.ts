@@ -285,6 +285,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
 
     const d: DemoDeps = {
       sepolia, dep, policy: defaultPolicy(dep), pendant, relayer, ledger: LEDGER_ADDRESS,
+      recorder: makeRecorder(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`, dep.amuletLog),
       setPrice: (p) => setPrice(dep.simA, p, rpc, dk),
       setRecord: async (name, key, value) => {
         await writeRecords(deployerSigner(rpc, dk), loadEnsDeployment().resolver, { [key]: value }, log, name);
