@@ -10,7 +10,7 @@ export interface Presence { type: "presence"; uptime?: number; worn?: boolean; p
 export type BrainState = "watching" | "proposing" | "stale" | "offline";
 
 // The one message the wearer starts. Everything else on this socket is the brain talking.
-export interface Ask { type: "ask"; kind: "swap"; from: string; to: string; amount?: string }
+export interface Ask { type: "ask"; kind: "swap" | "portfolio"; from?: string; to?: string; amount?: string }
 
 export interface Pick { type: "pick"; id: string; idx: number }
 export interface Dismiss { type: "dismiss"; id: string }

@@ -24,12 +24,17 @@ static ui_state_t s_state = UI_HOME;
 static bool s_confirm, s_reject, s_armed;
 static ui_status_t s_status;
 
-static lv_obj_t *s_scr[UI_SWAP + 1];
+static lv_obj_t *s_scr[UI_PORTFOLIO + 1];
 
 // SWAP: the wearer's own request. Two pills cycle the pair, a third sends it to the agent.
 static lv_obj_t *s_sw_title, *s_sw_row[2], *s_sw_side[2], *s_sw_tok[2], *s_sw_go, *s_sw_golbl, *s_sw_note, *s_sw_arc;
 static int s_sw_sel[2] = { 0, 1 };   // index into SW_TOKENS: from, to
 static bool s_sw_ask;                 // Go was tapped; the main loop takes it
+
+// PORTFOLIO: what the account holds. A scrolling list, because four holdings do not fit on a
+// 32 mm disc and pretending otherwise would just hide one.
+static lv_obj_t *s_pf_title, *s_pf_list, *s_pf_row[PORTFOLIO_MAX], *s_pf_label[PORTFOLIO_MAX];
+static lv_obj_t *s_pf_value[PORTFOLIO_MAX], *s_pf_sub[PORTFOLIO_MAX], *s_pf_empty;
 
 // OPTIONS (yield card)
 static lv_obj_t *s_o_title, *s_o_row[3], *s_o_name[3], *s_o_rate[3], *s_o_footer, *s_o_arc;
@@ -632,6 +637,9 @@ static void swipe(lv_event_t *e)
     if (s_state == UI_PHOTO && dir == LV_DIR_RIGHT) load_dir(UI_HOME,  LV_SCR_LOAD_ANIM_MOVE_RIGHT);
     if (s_state == UI_HOME  && dir == LV_DIR_TOP)   load_dir(UI_SWAP,  LV_SCR_LOAD_ANIM_MOVE_TOP);
     if (s_state == UI_SWAP  && dir == LV_DIR_BOTTOM) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
+    // Down from HOME for the holdings; only a sideways swipe leaves, so scrolling stays safe.
+    if (s_state == UI_HOME  && dir == LV_DIR_BOTTOM) load_dir(UI_PORTFOLIO, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
+    if (s_state == UI_PORTFOLIO && (dir == LV_DIR_RIGHT || dir == LV_DIR_LEFT)) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
 }
 
 static void build_photo(void)
@@ -801,6 +809,83 @@ void ui_swap_waiting(const char *note)
     lvgl_port_unlock();
 }
 
+// The list scrolls on a vertical drag, which LVGL swallows before it becomes a gesture — so
+// only a horizontal swipe leaves the screen, and scrolling never throws you back to HOME.
+#define PF_ROW_H 44
+static void build_portfolio(void)
+{
+    lv_obj_t *s = s_scr[UI_PORTFOLIO] = screen(&bg_base, NULL);
+    s_pf_title = text(s, &manrope_700_15, C_TEXT, 34, "Holdings");
+    s_pf_list = lv_obj_create(s);
+    lv_obj_remove_style_all(s_pf_list);
+    lv_obj_set_size(s_pf_list, 200, 132);
+    lv_obj_set_pos(s_pf_list, 20, 62);
+    lv_obj_set_style_pad_row(s_pf_list, 6, LV_PART_MAIN);
+    lv_obj_set_flex_flow(s_pf_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(s_pf_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(s_pf_list, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_add_flag(s_pf_list, LV_OBJ_FLAG_SCROLLABLE);
+    for (int i = 0; i < PORTFOLIO_MAX; i++) {
+        s_pf_row[i] = lv_obj_create(s_pf_list);
+        lv_obj_remove_style_all(s_pf_row[i]);
+        lv_obj_set_size(s_pf_row[i], 176, 38);
+        lv_obj_set_style_radius(s_pf_row[i], 12, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_pf_row[i], lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_pf_row[i], 28, LV_PART_MAIN);
+        lv_obj_clear_flag(s_pf_row[i], LV_OBJ_FLAG_SCROLLABLE);
+        s_pf_label[i] = lv_label_create(s_pf_row[i]);
+        lv_obj_set_style_text_font(s_pf_label[i], &manrope_700_15, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_pf_label[i], lv_color_hex(C_TEXT), LV_PART_MAIN);
+        lv_obj_set_size(s_pf_label[i], 76, 18);
+        lv_label_set_long_mode(s_pf_label[i], LV_LABEL_LONG_DOT);
+        lv_obj_align(s_pf_label[i], LV_ALIGN_TOP_LEFT, 12, 3);
+        s_pf_sub[i] = lv_label_create(s_pf_row[i]);
+        lv_obj_set_style_text_font(s_pf_sub[i], &manrope_500_11, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_pf_sub[i], lv_color_hex(C_MUTED), LV_PART_MAIN);
+        lv_obj_set_size(s_pf_sub[i], 96, 14);
+        lv_label_set_long_mode(s_pf_sub[i], LV_LABEL_LONG_DOT);
+        lv_obj_align(s_pf_sub[i], LV_ALIGN_BOTTOM_LEFT, 12, -4);
+        s_pf_value[i] = lv_label_create(s_pf_row[i]);
+        lv_obj_set_style_text_font(s_pf_value[i], &manrope_700_15, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_pf_value[i], lv_color_hex(C_BLUE), LV_PART_MAIN);
+        lv_obj_align(s_pf_value[i], LV_ALIGN_RIGHT_MID, -12, 0);
+    }
+    s_pf_empty = text(s, &manrope_500_13, C_MUTED, 112, "asking the agent...");
+    lv_obj_add_event_cb(s, swipe, LV_EVENT_GESTURE, NULL);
+}
+
+void ui_portfolio_waiting(void)
+{
+    if (!display_ready() || !s_pf_title || !lvgl_port_lock(0)) { s_state = UI_PORTFOLIO; return; }
+    for (int i = 0; i < PORTFOLIO_MAX; i++) show(s_pf_row[i], false);
+    show(s_pf_empty, true);
+    lv_label_set_text(s_pf_empty, "asking the agent...");
+    display_backlight(100);
+    lv_screen_load(s_scr[UI_PORTFOLIO]);
+    s_state = UI_PORTFOLIO;
+    lvgl_port_unlock();
+}
+
+void ui_show_portfolio(const amulet_portfolio_t *p)
+{
+    if (!display_ready() || !s_pf_title || !lvgl_port_lock(0)) { s_state = UI_PORTFOLIO; return; }
+    for (int i = 0; i < PORTFOLIO_MAX; i++) {
+        bool on = i < p->n;
+        if (on) {
+            lv_label_set_text(s_pf_label[i], p->rows[i].label);
+            lv_label_set_text(s_pf_value[i], p->rows[i].value);
+            lv_label_set_text(s_pf_sub[i], p->rows[i].sub);
+        }
+        show(s_pf_row[i], on);
+    }
+    show(s_pf_empty, p->n == 0);
+    lv_obj_scroll_to_y(s_pf_list, 0, LV_ANIM_OFF);
+    display_backlight(100);
+    lv_screen_load(s_scr[UI_PORTFOLIO]);
+    s_state = UI_PORTFOLIO;
+    lvgl_port_unlock();
+}
+
 void ui_show_options(const amulet_options_t *o)
 {
     s_o_n = o->n; s_pick = -1;
@@ -850,6 +935,7 @@ void ui_init(void)
     if (!lvgl_port_lock(0)) return;
     build_home(); build_proposal(); build_wait(); build_result(); build_blocked(); build_idle();
     build_photo(); build_pairing(); build_ledger(); build_options(); build_agent(); build_swap();
+    build_portfolio();
     lv_screen_load(s_scr[UI_HOME]);
     s_state = UI_HOME;
     lvgl_port_unlock();

@@ -19,6 +19,7 @@ typedef enum {
     UI_OPTIONS,       // a yield card: up to three venues, tap one, swipe to dismiss
     UI_AGENT,         // who is asking: the agent's face and name, tap to see what they want
     UI_SWAP,          // swipe up from HOME: pick a pair and ask the agent to find a route
+    UI_PORTFOLIO,     // swipe down from HOME: what the account holds, scrolled
 } ui_state_t;
 
 typedef enum { UI_PAIR_NONE, UI_PAIR_PAIRED, UI_PAIR_REMOVED } ui_pair_t;
@@ -55,6 +56,11 @@ bool ui_take_pick(int *idx);                       // true once per tapped row
 // The one screen the wearer starts something from. Two pills choose the pair, the third asks
 // the agent to go and find a route; whatever comes back is an ordinary proposal and is checked
 // like one. Asking is not approving.
+// What the account holds. The rows arrive already worded from the brain; the pendant shows
+// them and nothing else. More than three and the list scrolls under your finger.
+void ui_show_portfolio(const amulet_portfolio_t *p);
+void ui_portfolio_waiting(void);   // opened before the answer arrived
+
 void ui_show_swap(void);
 bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap);  // true once per Go
 void ui_swap_waiting(const char *note);            // "Asking the agent...", or a refusal

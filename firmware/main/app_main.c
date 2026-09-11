@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "esp_sntp.h"
 #include <time.h>
 #include "display.h"
@@ -207,6 +208,8 @@ static int64_t agents_fetched_at(void)
     for (int i = 0; i < s_nagents; i++) if (s_agents[i].policy.fetched_at > newest) newest = s_agents[i].policy.fetched_at;
     return newest;
 }
+static amulet_portfolio_t s_portfolio;
+static volatile bool s_have_portfolio;
 static volatile bool s_policy_refresh_now;   // the brain saw the ENS records change
 static void on_ws_rx(const char *data, size_t len)
 {
@@ -214,7 +217,16 @@ static void on_ws_rx(const char *data, size_t len)
     amulet_proposal_t p;
     if (len < 64) {   // tiny control message; the frame is not NUL-terminated
         char head[64]; memcpy(head, data, len); head[len] = 0;
-        if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
+        if (strstr(head, "\"type\":\"portfolio\"")) {
+        char err[64];
+        if (portfolio_parse(data, len, &s_portfolio, err, sizeof err)) {
+            s_have_portfolio = true;
+        } else {
+            ESP_LOGW(TAG, "portfolio ignored: %s", err);
+        }
+        return;
+    }
+    if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
     }
     // A yield card is not a proposal: nothing to sign until a row is tapped.
     if (len > 20 && memmem(data, len < 40 ? len : 40, "\"options\"", 9)) {
@@ -560,6 +572,7 @@ void app_main(void)
                  s_agents[i].policy.nallowed, s_agents[i].has_face ? ", has a face" : "");
     if (!s_nagents) ESP_LOGW(TAG, "no agents yet: every tier-1/2 proposal will be refused until %s answers", AMULET_ENS_PARENT);
     time_t policy_tried = time(NULL);
+    bool pf_asked = false;   // ask the brain once per visit to the holdings screen
 
 #if AMULET_FAKE_PROPOSAL
     // Fired from the idle loop the first time the Ledger is ready, rather than once at boot,
@@ -617,6 +630,9 @@ void app_main(void)
                 s_policy_refresh_now = false;
                 policy_tried = now;
                 bool stale;
+                ESP_LOGI(TAG, "heap before agent read: %u total, %u internal",
+                         (unsigned)esp_get_free_heap_size(),
+                         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
                 agents_refresh(&stale);
                 if (stale != st.policy_stale) { st.policy_stale = stale; ui_set_status(&st); }
             }
@@ -643,6 +659,19 @@ void app_main(void)
                 vTaskDelay(pdMS_TO_TICKS(1800));
                 ui_show_home();
             }
+        }
+
+        // The holdings screen asks once when it opens and shows whatever comes back.
+        if (ui_state() == UI_PORTFOLIO) {
+            if (!pf_asked) {
+                pf_asked = true;
+                s_have_portfolio = false;
+                ui_portfolio_waiting();
+                if (!ws_send_text("{\"type\":\"ask\",\"kind\":\"portfolio\"}")) ESP_LOGW(TAG, "portfolio ask not delivered");
+            }
+            if (s_have_portfolio) { s_have_portfolio = false; ui_show_portfolio(&s_portfolio); }
+        } else {
+            pf_asked = false;
         }
 
         // The one thing the wearer starts. The screen sends an ask; whatever the agent comes

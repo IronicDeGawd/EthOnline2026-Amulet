@@ -79,6 +79,21 @@ typedef struct {
     int64_t  expires_at;
 } amulet_options_t;
 
+// What the account holds, as the brain read it. Rows are already formatted for the screen:
+// the pendant does no arithmetic on them, it only shows what it was told, and the wearer can
+// check any of it on a block explorer. Eight is more than fits, which is why the list scrolls.
+#define PORTFOLIO_MAX 6
+typedef struct {
+    int n;
+    struct {
+        char label[16];   // "ETH", "Sim-A debt"
+        char value[16];   // "0.0134", "$10.00"
+        char sub[20];     // "in the account", "health 1.33"
+    } rows[PORTFOLIO_MAX];
+} amulet_portfolio_t;
+
+bool portfolio_parse(const char *json, size_t len, amulet_portfolio_t *out, char *err, size_t err_cap);
+
 // Returns true only for a well-formed {type:"options"} message with 1..3 items.
 bool options_parse(const char *json, size_t len, amulet_options_t *out, char *err, size_t err_cap);
 bool options_expired(const amulet_options_t *o, int64_t now_unix);   // same rule as proposal_expired

@@ -39,6 +39,7 @@ import { makeNovaExplainer, templateExplainer } from "../engine/llm.js";
 import { makeNovaDecider } from "../engine/decide.js";
 import { fetchHistory } from "../data/graph/history.js";
 import { formatQuote, readEthUsd, syncSimPrice } from "../chain/oracle.js";
+import { portfolioMessage, readPortfolio } from "../chain/portfolio.js";
 import { PendantLink } from "../pendant/ws.js";
 import { Brain, type Simulation } from "../brain.js";
 
@@ -427,6 +428,15 @@ program.command("demo").description("one key per scenario, with the pendant conn
 
     // The firmware's swap screen sends this; the w key fakes the same thing.
     pendant.on("ask", (a) => {
+      if (a.kind === "portfolio") {
+        void readPortfolio(sepolia, dep)
+          .then((rows) => {
+            log(`portfolio: ${rows.map((r) => `${r.label} ${r.value}`).join(", ")}`);
+            pendant.send(portfolioMessage(rows));
+          })
+          .catch((e) => log(`portfolio read failed: ${(e as Error).message.split("\n")[0]}`));
+        return;
+      }
       if (a.kind !== "swap") { log(`ignoring an ask I do not understand: ${a.kind}`); return; }
       const from = a.from === "USDC" ? "USDC" : "ETH";
       const to = a.to === "USDC" ? "USDC" : "ETH";

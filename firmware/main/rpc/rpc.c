@@ -14,6 +14,16 @@ static int s_id = 1;
 
 void rpc_init(const char *url) { s_url = url; }
 
+// The JSON bodies and answers are the largest things this file touches — a batch answer can be
+// sixteen kilobytes. Taken from internal RAM they starve mbedtls, whose AES and TLS buffers
+// must be internal and DMA-capable; the symptom is "esp-aes: Failed to allocate memory" and a
+// write that sends zero bytes. External RAM is slower and perfectly fine for a JSON string.
+static void *big_alloc(size_t n)
+{
+    void *p = heap_caps_malloc(n, MALLOC_CAP_SPIRAM);
+    return p ? p : malloc(n);
+}
+
 // One HTTP POST of a JSON body; returns the raw answer (caller frees) or NULL. Shared by the
 // single-call and batch paths so there is one place that knows about TLS, timeouts and sizes.
 static char *post_json(const char *body, size_t len, char *err_out, size_t err_cap, const char *what)
@@ -45,7 +55,7 @@ static char *post_json(const char *body, size_t len, char *err_out, size_t err_c
     int cl = esp_http_client_fetch_headers(c);
     int status = esp_http_client_get_status_code(c);
     int cap = (cl > 0 && cl < 65536) ? cl + 1 : 16384;
-    resp = malloc(cap);
+    resp = big_alloc(cap);
     if (!resp) goto out;
     int total = 0, r;
     while ((r = esp_http_client_read(c, resp + total, cap - 1 - total)) > 0) { total += r; if (total >= cap - 1) break; }
@@ -65,7 +75,7 @@ out:
 static cJSON *call_json(const char *method, const char *params_json, char *err_out, size_t err_cap)
 {
     size_t bcap = strlen(params_json) + 128;
-    char *body = malloc(bcap); if (!body) return NULL;
+    char *body = big_alloc(bcap); if (!body) return NULL;
     int n = snprintf(body, bcap, "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"%s\",\"params\":%s}", s_id++, method, params_json);
     if (n <= 0 || n >= (int)bcap) { free(body); return NULL; }
     char *resp = post_json(body, (size_t)n, err_out, err_cap, method);
@@ -128,7 +138,7 @@ bool rpc_eth_call_batch(const char *to_hex, const char **data_hex, int n, char *
     if (n <= 0 || n > 16) return false;
     size_t bcap = 256;
     for (int i = 0; i < n; i++) bcap += strlen(data_hex[i]) + 160;
-    char *body = malloc(bcap);
+    char *body = big_alloc(bcap);
     if (!body) return false;
     int w = snprintf(body, bcap, "[");
     for (int i = 0; i < n; i++) {
@@ -227,7 +237,7 @@ bool rpc_balance(const char *addr_hex, uint8_t out[32])
 
 bool rpc_send_raw(const uint8_t *raw, size_t len, char tx_hash_out[67], char err_out[128])
 {
-    char *hex = malloc(2 * len + 8); if (!hex) return false;
+    char *hex = big_alloc(2 * len + 8); if (!hex) return false;
     hex[0] = '['; hex[1] = '"'; hex[2] = '0'; hex[3] = 'x';
     bytes_to_hex(raw, len, hex + 4);
     strcat(hex, "\"]");
