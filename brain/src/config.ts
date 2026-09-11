@@ -119,11 +119,14 @@ export const AGENTS = {
     label: "repay",
     title: "Repay bot",
     caps: { max_value_wei: 50_000_000_000_000_000n, targets: ["simA"] as const, selectors: ["repay", "supply"] as const },
+    // What the model is told it is for. One agent, one job, one leash.
+    mandate: "You are a cautious guardian. Your only concern is that this position never gets liquidated. You do not chase yield.",
   },
   yield: {
     label: "yield",
     title: "Yield scout",
     caps: { max_value_wei: 10_000_000_000_000_000n, targets: ["simB"] as const, selectors: ["supply"] as const },
+    mandate: "You are a yield scout. You look for a better rate for the same asset and move only when the gain clearly beats the cost of interrupting your owner.",
   },
 } as const;
 export type AgentKey = keyof typeof AGENTS;

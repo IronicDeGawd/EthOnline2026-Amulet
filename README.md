@@ -38,12 +38,12 @@ Amulet makes the human-in-the-loop a **physical object with one job**. Roughly 1
 │ BRAIN (untrusted host)   │────────▶│ PENDANT (ESP32-S3)       │────────▶│ LEDGER       │
 │ Node/TS                  │         │ round display + touch    │         │ Nano X       │
 │                          │◀────────│ haptic · WiFi · NimBLE   │◀────────│ Ethereum app │
-│ • Substreams tick        │ status  │                          │ v,r,s   │              │
-│ • Graph queries          │         │ • proposal ⊆ ENS policy? │         │ shows tx     │
-│   + freshness gate       │         │ • show, buzz, swipe      │         │ you tap      │
-│ • rule engine            │         │ • APDU stream to Ledger  │         └──────────────┘
-│ • LLM writes rationale   │         │ • assemble signed tx     │
-│ • Key Ring secrets       │         │ • eth_sendRawTransaction ─┼──────▶ Sepolia
+│ • Graph queries          │ status  │                          │ v,r,s   │              │
+│   + freshness gate       │         │ • proposal ⊆ ENS policy? │         │ shows tx     │
+│ • model decides          │         │ • show, buzz, swipe      │         │ you tap      │
+│   (rules as fallback)    │         │ • APDU stream to Ledger  │         └──────────────┘
+│ • Key Ring secrets       │         │ • assemble signed tx     │
+│ • relays signed intents  │         │ • eth_sendRawTransaction ─┼──────▶ Sepolia
 └──────────────────────────┘         └──────────────────────────┘
             ▲                                    ▲
             │ reads policy                       │ reads policy
@@ -59,7 +59,7 @@ Amulet makes the human-in-the-loop a **physical object with one job**. Roughly 1
 | Sponsor | Role | Where |
 |---|---|---|
 | **Ledger** | Pendant implements the Ledger BLE APDU transport natively on ESP32-S3 and drives the Ethereum app (`GET PUBLIC KEY`, `SIGN TX`, and the EIP-712 typed-data commands so the device reads the action in words instead of blind-signing bytes). Brain secrets are encrypted under the Ledger Key Ring (`wallet-cli ring`) and decrypted at boot on a host with no USB. The Ledger account is the only one that can edit the agent's policy. | `firmware/main/ledger/`, `contracts/src/AmuletAccount.sol`, `docs/LEDGER_FEEDBACK.md` |
-| **The Graph** | Messari standardized lending subgraphs supply live market conditions; one query shape runs against three pinned deployments (Aave v3, Compound v3, Spark) to rank an asset's supply rate across protocols; Substreams is the agent's clock (one tick per block); a custom subgraph on Subgraph Studio indexes the agent's own actions. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | `brain/src/data/graph/`, `subgraph/` |
+| **The Graph** | Messari standardized lending subgraphs supply live market conditions; one query shape runs against three pinned deployments (Aave v3, Compound v3, Spark) to rank an asset's supply rate across protocols; a custom subgraph on Subgraph Studio indexes the agent's own actions — every approval and refusal, per agent — and the deployment ID and block the data came from are put in the model's own prompt. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | `brain/src/data/graph/`, `subgraph/` |
 | **ENS** | Every agent lives at its own subname on ENSv2 Sepolia, with its own limits and its own face. Its policy (allowed contracts, max value, thresholds) is text records on a permissioned resolver. Enhanced Access Control gives the Ledger the policy-admin role and the brain a status-only role. The brain cannot raise its own limits. Revoking the subname is the kill switch. | `firmware/main/ens/`, `brain/src/ens/` |
 
 ## The policy on ENS
@@ -173,9 +173,29 @@ pnpm amulet yield [--asset WETH]        # the ranked table, with deployment ids 
 pnpm amulet run --simulate yield        # a card on the wrist right now
 ```
 
-## What the LLM does and does not decide
+## What the model decides, and what it can never do
 
-The LLM writes the one-line human summary and the rationale. It **never** chooses the action, the target, or the amount. Those come from deterministic rules over Graph data, bounded by the ENS policy, and re-checked by the pendant before anything reaches the Ledger.
+The model decides. Nova Lite is handed the position, the live market from The Graph, the ranked
+venues, the provenance of that data (which deployment, which block), and the agent's own policy
+**including its spending cap**. It answers with an action, a market and an amount — or it stands
+down and says why. Each agent carries its own mandate: the repay bot exists to stop a
+liquidation and is told not to chase yield; the scout is told to move only when the gain beats
+the cost of interrupting its owner.
+
+Nothing it answers is trusted:
+
+- the answer is parsed, and anything unreadable falls back to the deterministic rules;
+- the action must exist, the market must be one that agent may touch, the amount must parse and
+  must sit under the cap it was shown; a repay needs real debt, a move needs a real spread;
+- **the figures the pendant shows are recomputed**, never copied from the model — the number you
+  read is the number that executes;
+- and the whole proposal is checked again, independently, on the pendant against the policy it
+  read from ENS itself.
+
+So the model is free to be wrong. It can propose too much, name a market it may not touch, or
+invent an action — and none of those reach the Ledger. `pnpm amulet decide` prints what it chose
+and what happened to that choice. `pnpm amulet run --rules` puts the deterministic rules back in
+charge if you want a run with no model in the loop.
 
 ## Repository layout
 

@@ -19,6 +19,7 @@ import { headBlock } from "./chain/sepolia.js";
 import { readPosition, type Position } from "./chain/positionsim.js";
 import { makeRecorder, type Recorder } from "./chain/amuletlog.js";
 import { evaluate, type Candidate, type MarketContext } from "./engine/rules.js";
+import type { Decider } from "./engine/decide.js";
 import { tierOf } from "./engine/tiers.js";
 import { selectorOf, withinPolicy } from "./engine/policy.js";
 import type { Explainer } from "./engine/llm.js";
@@ -48,6 +49,8 @@ export interface BrainDeps {
   yieldSource?: () => Promise<YieldTable>; // ranked venues for the position's asset
   relayer?: Relayer; // typed-data path: the wrist signs an intent, this carries it to chain
   agent?: string; // the name this brain runs as; goes into every proposal it sends
+  decider?: Decider; // the model decides what to propose; rules answer when it cannot
+  mandate?: string; // what this agent is for, in words, handed to the model
   log: (line: string) => void;
   simulate?: Simulation;
   once?: boolean; // stop after the first decision
@@ -205,7 +208,23 @@ export class Brain {
       `coll ${(Number(pos.collateralWei) / 1e18).toFixed(4)} ETH debt ${(Number(pos.debtUnits) / 1e6).toFixed(2)} sUSDC`,
     );
 
-    // 3. Rules → candidates; one proposal at a time, with a cooldown per rule.
+    // 3. The model decides, if there is one. Its answer is checked against the same policy
+    // the pendant holds; anything it invents is dropped and the rules answer instead.
+    if (d.decider) {
+      const j = await d.decider.decide(pos, market, d.policy, d.mandate ?? "", fresh.evidence);
+      d.log(`model: ${j.decision?.act === false ? "stand down" : j.decision?.action ?? "—"} — ${j.reason}`);
+      if (j.candidate) {
+        const last = this.lastRuleAt.get(j.candidate.rule) ?? 0;
+        if (Date.now() - last <= (RULE_COOLDOWN_MS[j.candidate.rule] ?? DEFAULT_COOLDOWN_MS)) {
+          d.log("  still inside that rule's cooldown; not sending it again");
+          return false;
+        }
+        return this.propose(j.candidate, fresh.evidence);
+      }
+      if (j.decision && !j.decision.act) return false; // it chose silence; respect it
+    }
+
+    // 4. Rules → candidates; one proposal at a time, with a cooldown per rule.
     const candidates = evaluate(pos, market, d.policy).filter((c) => {
       const last = this.lastRuleAt.get(c.rule) ?? 0;
       return Date.now() - last > (RULE_COOLDOWN_MS[c.rule] ?? DEFAULT_COOLDOWN_MS);

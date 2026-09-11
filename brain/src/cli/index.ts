@@ -36,6 +36,7 @@ import { readPosition } from "../chain/positionsim.js";
 import { makeRecorder } from "../chain/amuletlog.js";
 import { defaultPolicy } from "../engine/policy.js";
 import { makeNovaExplainer, templateExplainer } from "../engine/llm.js";
+import { makeNovaDecider } from "../engine/decide.js";
 import { PendantLink } from "../pendant/ws.js";
 import { Brain, type Simulation } from "../brain.js";
 
@@ -70,7 +71,7 @@ async function setPrice(sim: `0x${string}`, price: bigint, rpc: string, key: Hex
   log(`  tx ${hash}`);
 }
 
-async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; raw?: boolean; agent?: string }) {
+async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; raw?: boolean; rules?: boolean; agent?: string }) {
   const s = await loadSecrets();
   const dep = loadDeployments();
   const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
@@ -79,6 +80,9 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   const graph = new GraphClient(requireSecret(s, "GRAPH_STUDIO_KEY"));
   if (s.AWS_PROFILE) process.env.AWS_PROFILE = s.AWS_PROFILE;
   const explainer = opts.llm ? makeNovaExplainer(s.AWS_REGION || "us-east-1") : templateExplainer;
+  // The model decides what to propose unless asked to keep to the rules. Either way the
+  // decision is checked against the policy here and again on the wrist.
+  const decider = opts.llm && opts.rules !== true ? makeNovaDecider(s.AWS_REGION || "us-east-1") : undefined;
   const recorder = s.BRAIN_LOG_PK ? makeRecorder(rpc, s.BRAIN_LOG_PK as `0x${string}`, dep.amuletLog) : undefined;
 
   // Policy: from ENS unless told otherwise. Without the name there is no policy to enforce,
@@ -125,8 +129,9 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   await pendant.listen(opts.port);
   log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)`);
   log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
+  log(decider ? `${AGENTS[agent].title} decides with nova-lite; the rules answer when it cannot` : "decisions come from the rules only");
   const simulate = (await parseSimulate(opts.simulate, dep, rpc, deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
-  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, relayer, agent: AGENTS[agent].label, log, simulate, once: opts.once });
+  const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, relayer, agent: AGENTS[agent].label, decider, mandate: AGENTS[agent].mandate, log, simulate, once: opts.once });
   process.on("SIGINT", () => { brain.stop(); pendant.close(); process.exit(0); });
   await brain.run();
   pendant.close();
@@ -138,6 +143,7 @@ program.command("run").description("watch, propose, record")
   .option("--simulate <what>", "hf=1.15 | price_drop | util_spike | yield")
   .option("--once", "stop after the first decision")
   .option("--no-llm", "template text instead of Nova Lite")
+  .option("--rules", "the deterministic rules decide; the model only writes the words")
   .option("--port <n>", "pendant port", String(PENDANT_PORT))
   .option("--no-ens", "built-in policy instead of the ENS records")
   .option("--raw", "blind-sign a transaction instead of a typed-data intent")
@@ -155,6 +161,35 @@ program.command("propose").description("one proposal, then exit")
 program.command("stale").description("pin a wrong deployment so the freshness gate trips")
   .requiredOption("--deployment <Qm>").option("--port <n>", "pendant port", String(PENDANT_PORT))
   .action((o) => boot({ llm: false, port: Number(o.port), deployment: o.deployment }));
+
+// One round through the model, printed, with no pendant and nothing sent. This is where you
+// watch it choose — and watch the policy drop it when it chooses badly.
+program.command("decide").description("ask the model what it would propose right now, and check it")
+  .option("--agent <name>", "which named agent decides", DEFAULT_AGENT)
+  .action(async (o) => {
+    const s = await loadSecrets();
+    const dep = loadDeployments();
+    const sepolia = sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL"));
+    const mainnet = mainnetClient(requireSecret(s, "MAINNET_RPC_URL"));
+    const graph = new GraphClient(requireSecret(s, "GRAPH_STUDIO_KEY"));
+    if (s.AWS_PROFILE) process.env.AWS_PROFILE = s.AWS_PROFILE;
+    const agent = (o.agent ?? DEFAULT_AGENT) as AgentKey;
+    if (!AGENTS[agent]) throw new Error(`unknown agent ${agent}`);
+    const policy = (await readPolicy(sepolia, agentName(AGENTS[agent].label), agentPolicy(agent, dep))).policy;
+    const sim = AGENTS[agent].caps.targets[0] === "simB" ? dep.simB : dep.simA;
+    const [pos, lending, table] = await Promise.all([
+      readPosition(sepolia, sim, dep.amuletAccount ?? LEDGER_ADDRESS),
+      fetchLending(graph, "aaveV3"),
+      fetchYieldTable(graph, mainnet, YIELD_ASSET).catch(() => ({ rows: [] })),
+    ]);
+    const market = { current: pickMarket(lending.markets, "WETH"), yield: table.rows };
+    log(`${AGENTS[agent].title} on ${pos.name}: HF ${Number.isFinite(pos.healthFactor) ? pos.healthFactor.toFixed(3) : "none"}, cap ${Number(policy.max_value_wei) / 1e18} ETH`);
+    const j = await makeNovaDecider(s.AWS_REGION || "us-east-1").decide(pos, market, policy, AGENTS[agent].mandate);
+    log(`it said: ${JSON.stringify(j.decision ?? null)}`);
+    log(`verdict: ${j.reason}`);
+    if (j.candidate) log(`would propose: ${j.candidate.action} ${j.candidate.facts.amount ?? ""} on ${j.candidate.simName}`);
+    else log("nothing goes to the wrist");
+  });
 
 program.command("status").description("one round of reads, no pendant").action(async () => {
   const s = await loadSecrets();
