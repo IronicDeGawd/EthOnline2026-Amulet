@@ -137,3 +137,30 @@ describe("naming a venue on a move", () => {
     expect(v.candidate).toBeUndefined();
   });
 });
+
+describe("what is worth a second attempt", () => {
+  it("corrects the mistakes that are its own", async () => {
+    const { correctable } = await import("../src/engine/decide.js");
+    expect(correctable("0.02 ETH is over its own cap of 0.01 ETH")).toBe(true);
+    expect(correctable('market "Tortuga" is not one it may touch (Sim-A)')).toBe(true);
+    expect(correctable("unknown action DRAIN_WALLET")).toBe(true);
+    expect(correctable("amount is zero")).toBe(true);
+  });
+
+  it("does not argue with a decision that was not a mistake", async () => {
+    const { correctable } = await import("../src/engine/decide.js");
+    expect(correctable("stood down: the position is comfortable")).toBe(false);
+    expect(correctable("no yield table to move against")).toBe(false);
+    expect(correctable("3 bps is under the 150 bps its policy asks for")).toBe(false);
+    expect(correctable("asked to repay a debt that does not exist")).toBe(false);
+  });
+});
+
+describe("being told it was refused", () => {
+  it("carries the last refusal into the brief", async () => {
+    const { brief } = await import("../src/engine/decide.js");
+    const { user } = brief(position(), market, policy, "guardian", undefined, undefined, "the device refused \"Add 0.02 ETH\" — it broke your limits");
+    expect(user).toContain("the last time you asked, it was refused");
+    expect(user).toContain("broke your limits");
+  });
+});

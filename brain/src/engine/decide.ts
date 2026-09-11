@@ -28,6 +28,8 @@ export interface Judgement {
   decision?: Decision;
   reason: string;      // why it was taken or dropped — always printed, so the demo is legible
   source: "nova" | "rules";
+  attempts?: number;   // 2 when it was told why it was refused and answered again
+  firstTry?: string;   // what it said the first time, when a correction happened
 }
 
 const ACTIONS = new Set(["REPAY_DEBT", "ADD_COLLATERAL", "MOVE_SUPPLY", "ADVISORY"]);
@@ -44,7 +46,7 @@ function fmtUsd(units: bigint): string {
 // What the model is allowed to know: its position, the market, its own leash. The caps are
 // in the brief on purpose — an agent that cannot see its limits cannot respect them, and we
 // want to be able to say the refusals happen despite the model having been told.
-export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory): { system: string; user: string } {
+export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string): { system: string; user: string } {
   const hf = Number.isFinite(p.healthFactor) ? p.healthFactor.toFixed(3) : "none (no debt)";
   const rows = market.yield ?? [];
   const yields = rows
@@ -100,7 +102,10 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
       (ev ? `evidence: ${ev.subgraph} deployment ${ev.deploymentId.slice(0, 12)}… at block ${ev.block}\n` : "") +
       // Its own past, read back from the subgraph that indexed it. An agent that cannot
       // remember being refused will be refused again for the same reason.
-      historyLines(hist),
+      historyLines(hist) +
+      // The last thing the wrist said no to, in its own words. This is the difference between
+      // an agent that learns and one that asks the same question until its owner stops reading.
+      (lastRefusal ? `the last time you asked, it was refused: ${lastRefusal}\n` : ""),
   };
 }
 
@@ -219,29 +224,70 @@ export function validate(d: Decision, p: Position, market: MarketContext, policy
 }
 
 export interface Decider {
-  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory): Promise<Judgement>;
+  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string): Promise<Judgement>;
+}
+
+// Reasons worth a second attempt: the model wanted something reasonable and got the shape or
+// the size wrong. "Stood down", "no yield table" and the like are not mistakes to correct.
+export function correctable(reason: string): boolean {
+  return /over its own cap|not one it may touch|unknown action|is not a number|amount is zero|too small/.test(reason);
 }
 
 export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Decider {
   const client = new BedrockRuntimeClient({ region });
   return {
-    async decide(p, market, policy, mandate, ev, hist) {
-      const { system, user } = brief(p, market, policy, mandate, ev, hist);
-      try {
+    async decide(p, market, policy, mandate, ev, hist, lastRefusal) {
+      const { system, user } = brief(p, market, policy, mandate, ev, hist, lastRefusal);
+      const ask = async (messages: { role: "user" | "assistant"; content: { text: string }[] }[]) => {
         const res = await client.send(
           new ConverseCommand({
             modelId: NOVA_MODEL,
             system: [{ text: system }],
-            messages: [{ role: "user", content: [{ text: user }] }],
+            messages,
             inferenceConfig: { maxTokens: 220, temperature: 0.2 },
           }),
           { abortSignal: AbortSignal.timeout(timeoutMs) },
         );
-        const text = res.output?.message?.content?.map((b) => b.text ?? "").join("") ?? "";
+        return res.output?.message?.content?.map((b) => b.text ?? "").join("") ?? "";
+      };
+      try {
+        const messages: { role: "user" | "assistant"; content: { text: string }[] }[] = [
+          { role: "user", content: [{ text: user }] },
+        ];
+        const text = await ask(messages);
         const d = parseDecision(text);
         if (!d) return { reason: `unreadable answer: ${text.replace(/\s+/g, " ").slice(0, 140)}`, source: "rules" };
         const v = validate(d, p, market, policy);
-        return { candidate: v.candidate, decision: d, reason: v.reason, source: v.candidate ? "nova" : "rules" };
+        if (v.candidate || !correctable(v.reason)) {
+          return { candidate: v.candidate, decision: d, reason: v.reason, source: v.candidate ? "nova" : "rules", attempts: 1 };
+        }
+
+        // It asked for something it is not allowed. Tell it exactly why and let it answer once
+        // more. One retry only: an agent that argues with its own limits is worse than silence.
+        messages.push({ role: "assistant", content: [{ text }] });
+        messages.push({
+          role: "user",
+          content: [{
+            text:
+              `That was refused: ${v.reason}. ` +
+              "Your limits are not negotiable and will not change. " +
+              "Answer once more with something inside them, or stand down.",
+          }],
+        });
+        const text2 = await ask(messages);
+        const d2 = parseDecision(text2);
+        if (!d2) {
+          return { decision: d, reason: `${v.reason}; its second answer was unreadable`, source: "rules", attempts: 2, firstTry: v.reason };
+        }
+        const v2 = validate(d2, p, market, policy);
+        return {
+          candidate: v2.candidate,
+          decision: d2,
+          reason: v2.candidate ? `${v2.reason} (after being refused: ${v.reason})` : `${v2.reason}; still refused after being told: ${v.reason}`,
+          source: v2.candidate ? "nova" : "rules",
+          attempts: 2,
+          firstTry: v.reason,
+        };
       } catch (e) {
         return { reason: `${(e as Error).name}: ${(e as Error).message.split("\n")[0].slice(0, 140)}`, source: "rules" };
       }

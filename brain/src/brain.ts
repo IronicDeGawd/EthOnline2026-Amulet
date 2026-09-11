@@ -64,6 +64,8 @@ export class Brain {
   private utilHistory: UtilSample[] = [];
   private pending?: Proposal;
   private lastRuleAt = new Map<string, number>();
+  // What the wrist, or its own policy, last said no to. Handed back to the model next round.
+  private lastRefusal?: string;
   private stopped = false;
   private ticks = 0;
   private yieldRows?: YieldRow[];
@@ -214,8 +216,10 @@ export class Brain {
     if (d.decider) {
       const hist = await fetchHistory(d.agent ?? "");
       if (hist) d.log(`memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused`);
-      const j = await d.decider.decide(pos, market, d.policy, d.mandate ?? "", fresh.evidence, hist);
+      const j = await d.decider.decide(pos, market, d.policy, d.mandate ?? "", fresh.evidence, hist, this.lastRefusal);
+      if (j.attempts === 2) d.log(`model: refused once (${j.firstTry}), asked again`);
       d.log(`model: ${j.decision?.act === false ? "stand down" : j.decision?.action ?? "—"} — ${j.reason}`);
+      if (!j.candidate && j.decision?.act) this.lastRefusal = j.reason;
       if (j.candidate) {
         const last = this.lastRuleAt.get(j.candidate.rule) ?? 0;
         if (Date.now() - last <= (RULE_COOLDOWN_MS[j.candidate.rule] ?? DEFAULT_COOLDOWN_MS)) {
@@ -359,6 +363,11 @@ export class Brain {
 
   private async record(p: Proposal, c: Candidate, decision: Decision): Promise<void> {
     const { d } = this;
+    // The wearer's answer is the strongest signal the agent gets. Remember a no, in the words
+    // the wrist used, so the next round starts from it rather than from scratch.
+    if (decision.result === "policy_reject") this.lastRefusal = `the device refused "${p.human}" — it broke your limits`;
+    else if (decision.result === "rejected") this.lastRefusal = `your owner swiped away "${p.human}"`;
+    else if (decision.result === "approved") this.lastRefusal = undefined;
     if (!d.recorder || c.action === "ADVISORY") return;
     try {
       const h = await d.recorder.record({
