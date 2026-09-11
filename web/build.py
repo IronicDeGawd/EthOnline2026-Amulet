@@ -16,7 +16,7 @@ S  = 7.0                                   # px per mm
 # drawing becomes line work without a second drawing existing anywhere.
 SOLIDS = {
     0:   "#d5dade",   # the case, light alloy, exactly the colour the hero has always shown
-    100: "#0d1114",   # the display itself, the screen colour of the hero
+    100: "#0e1a36",   # the display itself, the firmware's navy ground
     215: "#2f5d50",   # carrier board, board green
     320: "#242a30",   # the module under its shield can
     395: "#b8901f",   # antenna, copper
@@ -150,15 +150,29 @@ PART = 100
 C2 = at(100); R2 = 17*S
 g.append(cyl_fill(C2, R2, 17))
 g.append(cyl(C2, R2, 17))
-g.append(f'<path d="{ell(C2, R2-11, 120, 420, 72, False)}" stroke="{GOLD}" stroke-width="3" stroke-linecap="round"/>')
+# The lit band the firmware paints across the foot of the screen, then the screen itself as the
+# device draws it: the agent's face, the verb, the amount, the unit, the rationale in its pill,
+# and the blue disc you hold. Device pixels map one to one onto face units (120 px = 119 units).
+g.append(f'<path d="{ell(C2, R2, 32, 148, 40, False)} Z" fill="{PAPER}" stroke="none" class="solid" style="--tint:#1b2f55"/>')
 face = f"matrix({-P[0]:.4f} {-P[1]:.4f} {K*D[0]:.4f} {K*D[1]:.4f} {C2[0]:.1f} {C2[1]:.1f})"
+FACE_ROWS = ["................", ".......##.......", ".......##.......", "...##########...",
+             "..############..", "..############..", "..##..####..##..", "..##..####..##..",
+             "..############..", "..###......###..", "..############..", "...##########...",
+             "....##....##....", "....##....##....", "...###....###...", "................"]
+cells = "".join(f'<rect x="{-14 + c*1.75:.2f}" y="{-102 + r*1.75:.2f}" width="1.8" height="1.8"/>'
+                for r, row in enumerate(FACE_ROWS) for c, ch in enumerate(row) if ch == "#")
 g.append(f'<g class="screen" transform="{face}" text-anchor="middle">'
-         f'<text class="sd" y="-48" font-size="10" fill="#7e8a92" letter-spacing="1">TIER 2 &#183; AAVE V3</text>'
-         f'<text y="-8" font-size="22.5" font-weight="600" fill="#f2f5f6">Repay</text>'
-         f'<text y="20" font-size="22.5" font-weight="600" fill="#f2f5f6">120 sUSDC</text>'
-         f'<text class="sd" y="44" font-size="10.5" fill="#9aa5ad">health 1.18 &#8594; 1.41</text>'
-         f'<path d="M-31 74 L20 74 M14 68 L21 74 L14 80" stroke="{GOLD}" stroke-width="1.4" stroke-linecap="round"/>'
-         f'<text class="sd" y="97" font-size="10" fill="#7e8a92">swipe to approve</text>'
+         f'<path d="M-101 63 L101 63" stroke="#3d5a8c" stroke-width="0.8"/>'
+         f'<circle r="112" fill="none" stroke="#1a2334" stroke-width="8"/>'
+         f'<g fill="#2f9e44">{cells}</g>'
+         f'<text y="-60" font-size="19" font-weight="600" fill="#f4f7fb">Repay</text>'
+         f'<text y="-16" font-size="52" font-weight="800" fill="#f4f7fb">120</text>'
+         f'<text y="14" font-size="16" font-weight="700" fill="#f4f7fb">sUSDC</text>'
+         f'<rect x="-62" y="26" width="124" height="24" rx="12" fill="#ffffff" fill-opacity="0.13"/>'
+         f'<text y="42.5" font-size="13" font-weight="700" fill="#f4f7fb">health 1.18 &#8594; 1.41</text>'
+         f'<circle cx="-43" cy="87" r="13" fill="#4f8ef7"/>'
+         f'<path d="M-48 87 L-38 87 M-41.5 83.5 L-38 87 L-41.5 90.5" stroke="#f4f7fb" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+         f'<text x="-24" y="92" font-size="15" font-weight="700" fill="#f4f7fb" text-anchor="start">Hold to sign</text>'
          f'</g>')
 # flex ribbon leaving the panel edge, folded back along the axis
 RIM = R2 - 2
@@ -306,7 +320,7 @@ seal(560)
 body = "".join(
     f'<g class="part" data-s="{sv:.0f}" style="--dx:{sv*D[0]:.1f}px;--dy:{sv*D[1]:.1f}px">{body_}</g>'
     for sv, body_ in sorted(groups, key=lambda t: -t[0]))
-axis = (f'<path d="M{fmt(off(O,-60))} L{fmt(off(O,660))}" stroke="{INK2}" '
+axis = (f'<path class="axis" d="M{fmt(off(O,-60))} L{fmt(off(O,660))}" stroke="{INK2}" '
         f'stroke-width="1" stroke-opacity="0.4" stroke-dasharray="2 10"/>')
 
 # ---- leaders and labels ----------------------------------------------------
@@ -341,7 +355,7 @@ for C, ang, side, ly, text in labels:
     lead.append(f'<text class="lbl" x="{tx}" y="{ly+6}" text-anchor="{anchor}">{text}</text>')
 
 svg = (f'<svg viewBox="0 0 2100 1000" class="assembly" role="img" aria-label="Exploded view of the pendant: cover glass, round display, carrier board, the ESP32-S3 module, its antenna, the haptic circuit and the battery, arranged along one axis." fill="none">'
-       f'{axis}<g stroke-linejoin="round" stroke-linecap="round">{body}</g><g class="callouts">{"".join(lead)}</g></svg>')
+       f'<g class="rig">{axis}<g stroke-linejoin="round" stroke-linecap="round">{body}</g><g class="callouts">{"".join(lead)}</g></g></svg>')
 
 open("assembly.svg.part", "w").write(svg)
 # where the stacked object sits inside the 2100 × 1000 box, and how big its face is, so the

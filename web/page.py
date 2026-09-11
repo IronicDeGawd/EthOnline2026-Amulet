@@ -11,7 +11,7 @@ html = '''<!doctype html>
 <meta name="description" content="A wearable pendant that carries an AI agent's transactions to your hardware wallet, and nothing else.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@600;700;800&display=swap">
 <style>
   :root {
     --ground: #e9ecee;
@@ -69,7 +69,7 @@ html = '''<!doctype html>
   svg.assembly { display: block; width: 100%; height: auto; overflow: visible; }
 
 /* ---- the object opens as you scroll ----------------------------------------------------
-   One drawing. At the top of the page it is the pendant, face-on and upright, seated where the
+   One drawing, every motion computed in one place. At the top of the page it is the pendant, face-on and upright, seated where the
    hero shows it. As you scroll it turns into the drawing's own oblique view, its seven parts
    slide apart along the axis they were drawn on, and the colour drains out until only the line
    work is left. Nothing is swapped for anything else.
@@ -81,15 +81,16 @@ html = '''<!doctype html>
 .pin   { order: 2; }
 .view  { position: relative; max-width: 1760px; margin: 0 auto; padding: 0 24px 72px; background: var(--paper); }
 .seat  { }
-.lean  { transform-origin: __OX__% __OY__%; }
+.assembly .rig { transform-box: view-box; transform-origin: __OX__% __OY__%; }
 .opening-space { display: none; }
 .assembly .part { transform-box: fill-box; }
 .assembly .solid { fill: #e2e4e2; }
-.assembly .screen { opacity: 0; }
+.assembly .screen { opacity: 0; font-family: Manrope, Archivo, system-ui, sans-serif; }
+.assembly .axis { opacity: 1; }
 .object-tail { background: var(--paper); }
 
 @keyframes turn  { 0%   { transform: translate(var(--x0, 0px), var(--y0, 0px)) scale(var(--k0, 1)) rotate(45deg) rotate(45deg) scaleX(__INVK__) rotate(-45deg); }
-                   46%  { transform: translate(var(--x1, 0px), var(--y1, 0px)) scale(1) rotate(0deg) rotate(45deg) scaleX(1) rotate(-45deg); }
+                   40%  { transform: translate(var(--x1, 0px), var(--y1, 0px)) scale(1) rotate(0deg) rotate(45deg) scaleX(1) rotate(-45deg); }
                    100% { transform: translate(0px, 0px) scale(1) rotate(0deg) rotate(45deg) scaleX(1) rotate(-45deg); } }
 @keyframes apart { from { transform: translate(calc(-1 * var(--dx)), calc(-1 * var(--dy))); }
                    to   { transform: translate(0, 0); } }
@@ -105,33 +106,36 @@ html = '''<!doctype html>
     .stage { display: block; view-timeline-name: --opening; }
     .pin   { position: sticky; top: 0; height: 100vh; z-index: 2; pointer-events: none; }
     .view  { height: 100%; max-width: none; margin: 0; padding: 0; background: none; }
-    .seat  { position: absolute; inset: 0; display: grid; place-items: center; padding: 0 24px; }
-    .lean  { width: min(100%, 176vh, 1712px); }
+    .seat  { position: absolute; inset: 0; display: grid; place-items: center; padding: 150px 24px 0; }
+    .lean  { width: min(100%, calc((100vh - 170px) * 2.1), 1712px); }
     .hero  { margin-top: -100vh; position: relative; z-index: 1; }
     .hero .shell { min-height: 100vh; }
     figure.device svg.static { visibility: hidden; }
-    .opening-space { display: block; height: 260vh; }
-    .view .titling { position: absolute; top: 56px; left: 64px; max-width: 29ch; pointer-events: auto; }
+    .opening-space { display: block; height: 320vh; }
+    .pin .view .titling { position: absolute; top: 44px; left: 64px; right: 64px; max-width: none; padding: 0; display: flex; align-items: baseline; gap: 40px; pointer-events: auto; }
+    .view .titling h2 { margin: 0; white-space: nowrap; }
+    .view .titling p { max-width: 58ch; }
     .view .corner  { position: absolute; right: 4%; bottom: 7%; width: 33%; max-width: 520px; pointer-events: auto; }
     .assembly .solid { fill: var(--tint); }
     .assembly .screen { opacity: 1; }
 
-    .lean, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path, .assembly .screen,
+    .assembly .rig, .assembly .axis, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path, .assembly .screen,
     svg.assembly .callouts, .view .titling, .view .corner {
       animation-timeline: --opening;
-      animation-range: contain 46% contain 92%;
+      animation-range: contain 40% contain 72%;
       animation-timing-function: linear;
       animation-fill-mode: both;
     }
-    .lean { animation-name: turn; animation-range: contain 0% contain 100%; animation-timing-function: ease-in-out; }
+    .assembly .rig { animation-name: turn; animation-range: contain 0% contain 72%; animation-timing-function: ease-in-out; }
     .assembly .part { animation-name: apart; }
-    .assembly .part:not([data-s="0"]):not([data-s="100"]) { animation-name: apart, reveal; animation-range: contain 46% contain 92%, contain 46% contain 60%; }
+    .assembly .part:not([data-s="0"]):not([data-s="100"]) { animation-name: apart, reveal; animation-range: contain 40% contain 72%, contain 40% contain 50%; }
     .assembly g[stroke-linejoin] path.solid { animation-name: drain; }
-    .assembly g[stroke-linejoin] path.solid.deep { animation-name: drain, reveal; animation-range: contain 46% contain 92%, contain 46% contain 66%; }
+    .assembly g[stroke-linejoin] path.solid.deep { animation-name: drain, reveal; animation-range: contain 40% contain 72%, contain 40% contain 54%; }
     .assembly g[stroke-linejoin] path { animation-name: ink; }
-    .assembly g[stroke-linejoin] path.deep { animation-name: reveal; animation-range: contain 46% contain 66%; }
-    .assembly .screen { animation-name: fade; animation-range: contain 40% contain 58%; }
-    svg.assembly .callouts, .view .titling, .view .corner { animation-name: reveal; animation-range: contain 78% contain 100%; }
+    .assembly g[stroke-linejoin] path.deep { animation-name: reveal; animation-range: contain 40% contain 54%; }
+    .assembly .axis { animation-name: reveal; animation-range: contain 40% contain 54%; }
+    .assembly .screen { animation-name: fade; animation-range: contain 36% contain 50%; }
+    svg.assembly .callouts, .view .titling, .view .corner { animation-name: reveal; animation-range: contain 64% contain 78%; }
   }
 }
   .object { background: var(--paper); border-top: 1px solid var(--rule); }
@@ -423,14 +427,17 @@ html = '''<!doctype html>
       var s = stage.getBoundingClientRect(), f = fig.getBoundingClientRect(), v = view.getBoundingClientRect();
       var cx = (v.left - s.left) + lean.offsetLeft + geo.cx * lean.offsetWidth;   /* at rest, pinned */
       var cy = lean.offsetTop + geo.cy * lean.offsetHeight;
-      var fx = (f.left - s.left) + f.width * 0.5, fy = (f.top - s.top) + f.height * (320 / 560);
+      var col = fig.previousElementSibling.getBoundingClientRect();   /* the words on the left */
+      var fx = (f.left - s.left) + f.width * 0.5, fy = (col.top - s.top) + col.height * 0.5 - 40;
       var k = (f.width * 192 / 620) / (geo.r * lean.offsetWidth);
-      lean.style.setProperty('--x0', (fx - cx).toFixed(1) + 'px');
-      lean.style.setProperty('--y0', (fy - cy).toFixed(1) + 'px');
-      lean.style.setProperty('--k0', k.toFixed(4));
+      var u = 2100 / lean.offsetWidth;                  /* screen px -> drawing units */
       var seat = lean.parentNode.getBoundingClientRect();
-      lean.style.setProperty('--x1', ((v.left - s.left) + seat.width * 0.5 - cx).toFixed(1) + 'px');
-      lean.style.setProperty('--y1', (seat.height * 0.5 - cy).toFixed(1) + 'px');
+      var rig = lean.querySelector('.rig');
+      rig.style.setProperty('--x0', ((fx - cx) * u).toFixed(1) + 'px');
+      rig.style.setProperty('--y0', ((fy - cy) * u).toFixed(1) + 'px');
+      rig.style.setProperty('--k0', k.toFixed(4));
+      rig.style.setProperty('--x1', (((v.left - s.left) + seat.width * 0.5 - cx) * u).toFixed(1) + 'px');
+      rig.style.setProperty('--y1', ((seat.height * 0.5 - cy) * u).toFixed(1) + 'px');
     }
     fit();
     window.addEventListener('resize', fit);
