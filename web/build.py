@@ -155,24 +155,26 @@ g.append(cyl(C2, R2, 17))
 # and the blue disc you hold. Device pixels map one to one onto face units (120 px = 119 units).
 g.append(f'<path d="{ell(C2, R2, 32, 148, 40, False)} Z" fill="{PAPER}" stroke="none" class="solid" style="--tint:#1b2f55"/>')
 face = f"matrix({-P[0]:.4f} {-P[1]:.4f} {K*D[0]:.4f} {K*D[1]:.4f} {C2[0]:.1f} {C2[1]:.1f})"
-FACE_ROWS = ["................", ".......##.......", ".......##.......", "...##########...",
-             "..############..", "..############..", "..##..####..##..", "..##..####..##..",
-             "..############..", "..###......###..", "..############..", "...##########...",
-             "....##....##....", "....##....##....", "...###....###...", "................"]
-cells = "".join(f'<rect x="{-14 + c*1.75:.2f}" y="{-102 + r*1.75:.2f}" width="1.8" height="1.8"/>'
-                for r, row in enumerate(FACE_ROWS) for c, ch in enumerate(row) if ch == "#")
+ICONS = "../firmware/assets/src/icons/"
+def icon(name):
+    import base64
+    return "data:image/png;base64," + base64.b64encode(open(ICONS + name, "rb").read()).decode()
+# baselines measured by rendering the screen with the firmware's Manrope files: LVGL puts a
+# label's ascender at its `top`, so baseline = top + ascender. Device pixel (x, y) is face (x-120, y-120).
 g.append(f'<g class="screen" transform="{face}" text-anchor="middle">'
-         f'<path d="M-101 63 L101 63" stroke="#3d5a8c" stroke-width="0.8"/>'
-         f'<circle r="112" fill="none" stroke="#1a2334" stroke-width="8"/>'
-         f'<g fill="#2f9e44">{cells}</g>'
-         f'<text y="-60" font-size="19" font-weight="600" fill="#f4f7fb">Repay</text>'
-         f'<text y="-16" font-size="52" font-weight="800" fill="#f4f7fb">120</text>'
-         f'<text y="14" font-size="16" font-weight="700" fill="#f4f7fb">sUSDC</text>'
+         f'<clipPath id="pillclip"><rect x="-56" y="30" width="112" height="16"/></clipPath>'
+         f'<radialGradient id="vig" cx="0.5" cy="0.45" r="0.55"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></radialGradient>'
+         f'<circle r="119" fill="url(#vig)"/>'
+         f'<path d="M-101 63 L101 63" stroke="#4d7fc4" stroke-width="1"/>'
+         f'<image href="{icon("ic_plane.png")}" x="-14" y="-102" width="28" height="28"/>'
+         f'<text y="-53" font-size="19" font-weight="600" fill="#f4f7fb">Repay</text>'
+         f'<text y="0" font-size="52" font-weight="800" fill="#f4f7fb">120</text>'
+         f'<text y="20" font-size="16" font-weight="700" fill="#f4f7fb">sUSDC on Sim-B</text>'
          f'<rect x="-62" y="26" width="124" height="24" rx="12" fill="#ffffff" fill-opacity="0.13"/>'
-         f'<text y="42.5" font-size="13" font-weight="700" fill="#f4f7fb">health 1.18 &#8594; 1.41</text>'
+         f'<text x="-56" y="44" font-size="13" font-weight="700" fill="#f4f7fb" text-anchor="start" clip-path="url(#pillclip)">Health factor 1.18 is under 1.25</text>'
          f'<circle cx="-43" cy="87" r="13" fill="#4f8ef7"/>'
-         f'<path d="M-48 87 L-38 87 M-41.5 83.5 L-38 87 L-41.5 90.5" stroke="#f4f7fb" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
-         f'<text x="-24" y="92" font-size="15" font-weight="700" fill="#f4f7fb" text-anchor="start">Hold to sign</text>'
+         f'<image href="{icon("ic_arrow.png")}" x="-51" y="79" width="16" height="16"/>'
+         f'<text x="-24" y="94" font-size="15" font-weight="700" fill="#f4f7fb" text-anchor="start">Hold to sign</text>'
          f'</g>')
 # flex ribbon leaving the panel edge, folded back along the axis
 RIM = R2 - 2
