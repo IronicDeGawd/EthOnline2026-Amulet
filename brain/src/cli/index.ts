@@ -52,12 +52,15 @@ function lanIp(): string {
   return "127.0.0.1";
 }
 
-async function parseSimulate(s: string | undefined, dep: Deployments, rpc: string, key: Hex): Promise<Simulation | undefined> {
+// The deployer key is only needed by the price-drop lever, so it is fetched lazily. Asking for
+// it up front meant the agent could not start anywhere that key does not live — which is every
+// server, by design.
+async function parseSimulate(s: string | undefined, dep: Deployments, rpc: string, key: () => Hex): Promise<Simulation | undefined> {
   if (!s) return undefined;
   if (s.startsWith("hf=")) return { hf: Number(s.slice(3)) };
   if (s === "util_spike") return { utilSpike: true };
   if (s === "yield") return { yield: true };
-  if (s === "price_drop") { await setPrice(dep.simA, 1600_00000000n, rpc, key); return undefined; }
+  if (s === "price_drop") { await setPrice(dep.simA, 1600_00000000n, rpc, key()); return undefined; }
   throw new Error(`unknown --simulate ${s}`);
 }
 
@@ -151,7 +154,36 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)`);
   log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
   log(decider ? `${AGENTS[agent].title} decides with nova-lite; the rules answer when it cannot` : "decisions come from the rules only");
-  const simulate = (await parseSimulate(opts.simulate, dep, rpc, deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
+  const simulate = (await parseSimulate(opts.simulate, dep, rpc, () => deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
+  // The pendant does not only listen. Its swap screen and its holdings screen ask the agent for
+  // something, and a deployed agent has to answer them — not just the demo driver on a laptop.
+  if (relayer) {
+    const d: DemoDeps = {
+      sepolia, dep, policy, pendant, relayer, recorder, ledger: LEDGER_ADDRESS,
+      simPrice: async () => (await readPosition(sepolia, dep.simA, dep.amuletAccount ?? LEDGER_ADDRESS)).price,
+      setPrice: async () => { log("the price lever is a local tool; not available here"); },
+      setRecord: async () => { log("policy edits are signed by the Ledger, not by this agent"); },
+      brainWrite: async () => { log("this agent cannot write policy records"); },
+      log,
+    };
+    pendant.on("ask", (a) => {
+      if (a.kind === "portfolio") {
+        void readPortfolio(sepolia, dep)
+          .then((rows) => { log(`holdings: ${rows.map((r) => `${r.label} ${r.value}`).join(", ")}`); pendant.send(portfolioMessage(rows)); })
+          .catch((e) => log(`holdings read failed: ${(e as Error).message.split("\n")[0]}`));
+        return;
+      }
+      if (a.kind !== "swap") { log(`an ask I do not understand: ${a.kind}`); return; }
+      const from = a.from === "USDC" ? "USDC" : "ETH";
+      const to = a.to === "USDC" ? "USDC" : "ETH";
+      const asked = (a.amount ?? "").trim();
+      const amount = /^\d+(\.\d+)?$/.test(asked)
+        ? (from === "ETH" ? parseEther(asked) : BigInt(Math.round(Number(asked) * 1e6)))
+        : (from === "ETH" ? 10_000_000_000_000_000n : 25_000_000n);
+      void swapAsk(d, from, to, amount).catch((e) => log(`swap failed: ${(e as Error).message.split("\n")[0]}`));
+    });
+  }
+
   const brain = new Brain({ sepolia, mainnet, graph, explainer, dep, policy, pendant, recorder, policySource, status, mainnetView, yieldSource, relayer, agent: AGENTS[agent].label, decider, mandate: AGENTS[agent].mandate, log, simulate, once: opts.once });
   process.on("SIGINT", () => { brain.stop(); pendant.close(); process.exit(0); });
   await brain.run();
