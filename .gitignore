@@ -46,3 +46,18 @@ web/app/tsconfig.tsbuildinfo
 # matchstick
 subgraph/tests/.latest.json
 subgraph/tests/.bin/
+
+# film render intermediates
+film/frames*/
+film/shots*/
+film/node_modules/
+film/*.woff2
+film/*.b64
+film/_film*.html
+film/sheet*.png
+film/closer.png
+film/fix.png
+film/flood.png
+film/vsheet/
+film/package*.json
+film/*.mp4
