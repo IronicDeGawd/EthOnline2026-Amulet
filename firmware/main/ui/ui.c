@@ -27,7 +27,7 @@ static ui_status_t s_status;
 static lv_obj_t *s_scr[UI_PORTFOLIO + 1];
 
 // SWAP: the wearer's own request. Two pills cycle the pair, a third sends it to the agent.
-static lv_obj_t *s_sw_title, *s_sw_row[3], *s_sw_side[3], *s_sw_tok[3], *s_sw_go, *s_sw_golbl, *s_sw_arc;
+static lv_obj_t *s_sw_title, *s_sw_row[3], *s_sw_side[3], *s_sw_tok[3], *s_sw_go, *s_sw_golbl;
 static int s_sw_sel[2] = { 0, 1 };   // index into SW_TOKENS: from, to
 static int s_sw_amt;                  // index into the amount list for the side being sold
 static bool s_sw_ask;                 // Go was tapped; the main loop takes it
@@ -228,8 +228,10 @@ static void hold_event(lv_event_t *e)
         }
         if (!s_press_counts) return;
         uint32_t held = now - s_press_at;
-        if (!s_hold_view && held >= HOLD_SHOW_MS) { s_hold_view = true; lv_arc_set_value(h->arc, 0); h->view(true); }
-        if (s_hold_view) lv_arc_set_value(h->arc, held >= HOLD_MS ? 100 : (int)(held * 100 / HOLD_MS));
+        // A screen with nothing to sign has no arc; these are unreachable there because it is
+        // never armed, but a null check costs nothing and outlives that assumption.
+        if (!s_hold_view && held >= HOLD_SHOW_MS) { s_hold_view = true; if (h->arc) lv_arc_set_value(h->arc, 0); h->view(true); }
+        if (s_hold_view && h->arc) lv_arc_set_value(h->arc, held >= HOLD_MS ? 100 : (int)(held * 100 / HOLD_MS));
         if (held >= HOLD_MS) { s_press_counts = false; s_hold_done = true; s_confirm = true; ESP_LOGI(TAG, "hold confirmed"); }
         return;
     }
@@ -476,6 +478,7 @@ static void build_pairing(void)
 // LEDGER: swipe right from HOME. Not paired → hold to pair; paired → hold to remove the bond;
 // removed → a short confirmation with no action row.
 static void load_dir(ui_state_t st, lv_screen_load_anim_t anim);
+static void swap_paint(void);
 static void ledger_view(bool on)
 {
     bool action = s_l_state != UI_PAIR_REMOVED;
@@ -626,6 +629,13 @@ static void load_dir(ui_state_t st, lv_screen_load_anim_t anim)
     s_state = st;
     s_shown_at = lv_tick_get();
     s_press_counts = s_hold_view = false;
+    // Anything a screen was waiting to hand over dies with the screen. A "Go" that was tapped
+    // and then swiped away from before the main loop read it would otherwise still be sitting
+    // there, and would fire an ask the wearer never made the next time they came back.
+    s_sw_ask = false;
+    s_tap = false;
+    s_pick = -1;
+    if (st == UI_SWAP) swap_paint();   // the button says "Find a route" again, not "Asking..."
 }
 
 static void swipe(lv_event_t *e)
@@ -717,6 +727,13 @@ static const char *SW_AMT_USDC[] = { "10", "25", "50" };
 
 static void swap_view(bool on) { (void)on; }
 
+// The full-disc touch layer sits above the screen, so the screen's own gesture handler never
+// sees anything here. Swiping down is how you leave, the mirror of the swipe that got you in.
+static void swap_swipe(lv_dir_t d)
+{
+    if (d == LV_DIR_BOTTOM) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
+}
+
 static const char *swap_amount(void)
 {
     return s_sw_sel[0] == 0 ? SW_AMT_ETH[s_sw_amt] : SW_AMT_USDC[s_sw_amt];
@@ -783,10 +800,9 @@ static void build_swap(void)
     lv_obj_set_style_text_font(s_sw_golbl, &manrope_700_15, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_sw_golbl, lv_color_hex(C_TEXT), LV_PART_MAIN);
     lv_obj_center(s_sw_golbl);
-    s_sw_arc = rim_arc(s);
-    s_hold_swap = (hold_t){ .arc = s_sw_arc, .view = swap_view, .armed = never_armed, .on_tap = swap_tap };
+    // No arc: nothing on this screen is held, and a ring with no meaning is just clutter.
+    s_hold_swap = (hold_t){ .arc = NULL, .view = swap_view, .armed = never_armed, .on_tap = swap_tap, .on_swipe = swap_swipe };
     touch_layer(s, &s_hold_swap);
-    lv_obj_add_event_cb(s, swipe, LV_EVENT_GESTURE, NULL);
     swap_paint();
 }
 

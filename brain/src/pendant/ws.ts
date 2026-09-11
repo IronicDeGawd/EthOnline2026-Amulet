@@ -23,6 +23,7 @@ export interface PendantEvents {
   presence: [Presence];
   pick: [Pick | Dismiss];
   ask: [Ask];
+  refused: [string];
 }
 
 export class PendantLink extends EventEmitter<PendantEvents> {
@@ -30,9 +31,30 @@ export class PendantLink extends EventEmitter<PendantEvents> {
   private sock?: WebSocket;
   private state: BrainState = "watching";
 
-  listen(port: number, host = "0.0.0.0"): Promise<void> {
+  // A shared secret in the path. On a home network nobody could reach this socket; on a public
+  // hostname anyone can, and an unauthenticated caller could answer proposals in the wearer's
+  // place, evict the real pendant, or spend the owner's model budget by asking over and over.
+  // None of that can move funds — the Ledger's signature is still required on chain — but all
+  // of it is worth refusing. The token lives beside the wifi password on the device and in the
+  // server's own secrets file; neither is in the repository.
+  private token?: string;
+
+  listen(port: number, host = "0.0.0.0", token?: string): Promise<void> {
+    this.token = token;
     return new Promise((resolve, reject) => {
-      this.wss = new WebSocketServer({ port, host });
+      // Refused before the handshake, not after: a caller that gets an open socket and is then
+      // closed has already been told the server is there and has already cost it work.
+      this.wss = new WebSocketServer({
+        port, host,
+        verifyClient: ({ req }, done) => {
+          if (!this.token) return done(true);
+          const path = (req.url ?? "").split("?")[0].replace(/^\/+|\/+$/g, "");
+          const header = String(req.headers["x-amulet-token"] ?? "");
+          const ok = path === this.token || header === this.token;
+          if (!ok) this.emit("refused", req.socket.remoteAddress ?? "somewhere");
+          done(ok, 401, "who are you");
+        },
+      });
       this.wss.on("listening", () => resolve());
       this.wss.on("error", reject);
       this.wss.on("connection", (ws, req) => {

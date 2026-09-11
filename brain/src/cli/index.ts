@@ -150,8 +150,13 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   }
 
   const pendant = new PendantLink();
-  await pendant.listen(opts.port);
-  log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)`);
+  // On a public hostname the socket needs to know who is knocking; on a LAN the token can be
+  // absent and nothing changes. Without it, anyone who learns the address can answer proposals
+  // in the wearer's place and spend the owner's model budget by asking over and over.
+  const wsToken = s.PENDANT_TOKEN;
+  await pendant.listen(opts.port, "0.0.0.0", wsToken);
+  pendant.on("refused", (who) => log(`refused a connection from ${who}: no token`));
+  log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)${wsToken ? ", token required" : ", OPEN — set PENDANT_TOKEN before exposing this"}`);
   log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
   log(decider ? `${AGENTS[agent].title} decides with nova-lite; the rules answer when it cannot` : "decisions come from the rules only");
   const simulate = (await parseSimulate(opts.simulate, dep, rpc, () => deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
@@ -398,8 +403,9 @@ program.command("demo").description("one key per scenario, with the pendant conn
     const dk = deployerKey(s, log);
     const relayer = makeRelayer(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`);
     const pendant = new PendantLink();
-    await pendant.listen(Number(o.port));
-    log(`listening on ws://${lanIp()}:${o.port}`);
+    await pendant.listen(Number(o.port), "0.0.0.0", s.PENDANT_TOKEN);
+    pendant.on("refused", (who) => log(`refused a connection from ${who}: no token`));
+    log(`listening on ws://${lanIp()}:${o.port}${s.PENDANT_TOKEN ? ", token required" : ""}`);
     pendant.on("connected", () => log("pendant connected"));
     pendant.on("disconnected", () => log("pendant away"));
 
