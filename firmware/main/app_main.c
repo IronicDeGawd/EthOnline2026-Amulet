@@ -645,6 +645,21 @@ void app_main(void)
             }
         }
 
+        // The one thing the wearer starts. The screen sends an ask; whatever the agent comes
+        // back with arrives as an ordinary proposal and is checked like any other.
+        if (ui_state() == UI_SWAP) {
+            char from[8], to[8], msg[128];
+            if (ui_take_swap(from, sizeof from, to, sizeof to)) {
+                snprintf(msg, sizeof msg, "{\"type\":\"ask\",\"kind\":\"swap\",\"from\":\"%s\",\"to\":\"%s\"}", from, to);
+                if (ws_send_text(msg)) {
+                    ESP_LOGI(TAG, "asked the agent: %s", msg);
+                } else {
+                    ESP_LOGW(TAG, "ask not delivered: %s", msg);
+                    ui_swap_waiting("no link to the agent");
+                }
+            }
+        }
+
         if (ui_state() == UI_OPTIONS) {
             int idx;
             char msg[128];

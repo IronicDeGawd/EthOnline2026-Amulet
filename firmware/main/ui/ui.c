@@ -24,7 +24,12 @@ static ui_state_t s_state = UI_HOME;
 static bool s_confirm, s_reject, s_armed;
 static ui_status_t s_status;
 
-static lv_obj_t *s_scr[UI_AGENT + 1];
+static lv_obj_t *s_scr[UI_SWAP + 1];
+
+// SWAP: the wearer's own request. Two pills cycle the pair, a third sends it to the agent.
+static lv_obj_t *s_sw_title, *s_sw_row[2], *s_sw_side[2], *s_sw_tok[2], *s_sw_go, *s_sw_golbl, *s_sw_note, *s_sw_arc;
+static int s_sw_sel[2] = { 0, 1 };   // index into SW_TOKENS: from, to
+static bool s_sw_ask;                 // Go was tapped; the main loop takes it
 
 // OPTIONS (yield card)
 static lv_obj_t *s_o_title, *s_o_row[3], *s_o_name[3], *s_o_rate[3], *s_o_footer, *s_o_arc;
@@ -141,7 +146,7 @@ typedef struct {
     void (*on_tap)(const lv_point_t *at);   // a short press with no drag; NULL = ignored
 } hold_t;
 #define TAP_MS 350             // released within this, without a drag, is a tap
-static hold_t s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts, s_hold_agent;
+static hold_t s_hold_swap, s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts, s_hold_agent;
 static uint32_t s_shown_at, s_press_at;
 static bool s_press_counts, s_hold_view;
 // Set the moment a hold completes. The arc and its "…ing" word then stay on screen until the
@@ -609,6 +614,8 @@ static void swipe(lv_event_t *e)
     if (s_state == UI_HOME  && dir == LV_DIR_LEFT)  load_dir(UI_PHOTO, LV_SCR_LOAD_ANIM_MOVE_LEFT);
     if (s_state == UI_HOME  && dir == LV_DIR_RIGHT) load_dir(UI_LEDGER, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
     if (s_state == UI_PHOTO && dir == LV_DIR_RIGHT) load_dir(UI_HOME,  LV_SCR_LOAD_ANIM_MOVE_RIGHT);
+    if (s_state == UI_HOME  && dir == LV_DIR_TOP)   load_dir(UI_SWAP,  LV_SCR_LOAD_ANIM_MOVE_TOP);
+    if (s_state == UI_SWAP  && dir == LV_DIR_BOTTOM) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
 }
 
 static void build_photo(void)
@@ -665,6 +672,119 @@ static void build_options(void)
     touch_layer(s, &s_hold_opts);
 }
 
+// SWAP: swipe up from HOME. The only screen where the wearer starts something. Rows at
+// y=74 and y=118 cycle the token; Go at y=166 sends the ask. Nothing here signs anything —
+// what comes back is a proposal and goes through the same policy check as any other.
+static const char *SW_TOKENS[] = { "ETH", "USDC" };
+#define SW_NTOK 2
+#define SW_ROW0_Y 74
+#define SW_ROW_H  44
+#define SW_GO_Y   156
+#define SW_GO_H   38
+
+static void swap_view(bool on) { (void)on; }
+
+static void swap_paint(void)
+{
+    for (int i = 0; i < 2; i++) lv_label_set_text(s_sw_tok[i], SW_TOKENS[s_sw_sel[i]]);
+}
+
+static void swap_tap(const lv_point_t *at)
+{
+    if (at->y >= SW_GO_Y && at->y < SW_GO_Y + SW_GO_H + 8) {
+        if (s_sw_sel[0] == s_sw_sel[1]) {   // nothing to swap; say so rather than ask
+            lv_label_set_text(s_sw_note, "pick two different");
+            return;
+        }
+        s_sw_ask = true;
+        lv_label_set_text(s_sw_note, "Asking the agent...");
+        ESP_LOGI(TAG, "swap asked: %s -> %s", SW_TOKENS[s_sw_sel[0]], SW_TOKENS[s_sw_sel[1]]);
+        return;
+    }
+    int i = (at->y - SW_ROW0_Y) / SW_ROW_H;
+    if (at->y < SW_ROW0_Y || i < 0 || i > 1) return;
+    s_sw_sel[i] = (s_sw_sel[i] + 1) % SW_NTOK;
+    swap_paint();
+    lv_label_set_text(s_sw_note, "swipe down for home");
+}
+
+static void build_swap(void)
+{
+    lv_obj_t *s = s_scr[UI_SWAP] = screen(&bg_base, NULL);
+    s_sw_title = text(s, &manrope_700_15, C_TEXT, 44, "Swap");
+    static const char *SIDE[2] = { "From", "To" };
+    for (int i = 0; i < 2; i++) {
+        int y = SW_ROW0_Y + i * SW_ROW_H;
+        s_sw_row[i] = lv_obj_create(s);
+        lv_obj_remove_style_all(s_sw_row[i]);
+        lv_obj_set_size(s_sw_row[i], 176, 36);
+        lv_obj_set_pos(s_sw_row[i], 32, y);
+        lv_obj_set_style_radius(s_sw_row[i], 12, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_sw_row[i], lv_color_white(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_sw_row[i], 33, LV_PART_MAIN);
+        s_sw_side[i] = lv_label_create(s_sw_row[i]);
+        lv_obj_set_style_text_font(s_sw_side[i], &manrope_500_13, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_sw_side[i], lv_color_hex(C_MUTED), LV_PART_MAIN);
+        lv_label_set_text(s_sw_side[i], SIDE[i]);
+        lv_obj_align(s_sw_side[i], LV_ALIGN_LEFT_MID, 14, 0);
+        s_sw_tok[i] = lv_label_create(s_sw_row[i]);
+        lv_obj_set_style_text_font(s_sw_tok[i], &manrope_700_15, LV_PART_MAIN);
+        lv_obj_set_style_text_color(s_sw_tok[i], lv_color_hex(C_TEXT), LV_PART_MAIN);
+        lv_obj_align(s_sw_tok[i], LV_ALIGN_RIGHT_MID, -14, 0);
+    }
+    s_sw_go = lv_obj_create(s);
+    lv_obj_remove_style_all(s_sw_go);
+    lv_obj_set_size(s_sw_go, 132, SW_GO_H);
+    lv_obj_set_pos(s_sw_go, 54, SW_GO_Y);
+    lv_obj_set_style_radius(s_sw_go, 14, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_sw_go, lv_color_hex(C_BLUE), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_sw_go, 200, LV_PART_MAIN);
+    s_sw_golbl = lv_label_create(s_sw_go);
+    lv_obj_set_style_text_font(s_sw_golbl, &manrope_700_15, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_sw_golbl, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    lv_label_set_text(s_sw_golbl, "Find a route");
+    lv_obj_center(s_sw_golbl);
+    s_sw_note = text(s, &manrope_500_11, C_MUTED, 200, "swipe down for home");
+    s_sw_arc = rim_arc(s);
+    s_hold_swap = (hold_t){ .arc = s_sw_arc, .view = swap_view, .armed = never_armed, .on_tap = swap_tap };
+    touch_layer(s, &s_hold_swap);
+    lv_obj_add_event_cb(s, swipe, LV_EVENT_GESTURE, NULL);
+    swap_paint();
+}
+
+void ui_show_swap(void)
+{
+    s_sw_ask = false;
+    if (!display_ready() || !s_sw_title || !lvgl_port_lock(0)) { s_state = UI_SWAP; return; }
+    swap_paint();
+    lv_label_set_text(s_sw_note, "swipe down for home");
+    s_press_counts = s_hold_done = s_hold_view = false;
+    s_shown_at = lv_tick_get();
+    s_confirm = s_reject = false;
+    display_backlight(100);
+    lv_screen_load(s_scr[UI_SWAP]);
+    s_state = UI_SWAP;
+    lvgl_port_unlock();
+}
+
+bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap)
+{
+    if (!s_sw_ask) return false;
+    s_sw_ask = false;
+    snprintf(from, from_cap, "%s", SW_TOKENS[s_sw_sel[0]]);
+    snprintf(to, to_cap, "%s", SW_TOKENS[s_sw_sel[1]]);
+    return true;
+}
+
+// Whatever the agent came back with, or did not. Shown on the swap screen itself so the
+// wearer stays where they started.
+void ui_swap_waiting(const char *note)
+{
+    if (!display_ready() || !s_sw_note || !lvgl_port_lock(0)) return;
+    lv_label_set_text(s_sw_note, note && note[0] ? note : "");
+    lvgl_port_unlock();
+}
+
 void ui_show_options(const amulet_options_t *o)
 {
     s_o_n = o->n; s_pick = -1;
@@ -713,7 +833,7 @@ void ui_init(void)
     if (!display_ready()) { ESP_LOGW(TAG, "no panel - UI disabled, signing runs headless"); return; }
     if (!lvgl_port_lock(0)) return;
     build_home(); build_proposal(); build_wait(); build_result(); build_blocked(); build_idle();
-    build_photo(); build_pairing(); build_ledger(); build_options(); build_agent();
+    build_photo(); build_pairing(); build_ledger(); build_options(); build_agent(); build_swap();
     lv_screen_load(s_scr[UI_HOME]);
     s_state = UI_HOME;
     lvgl_port_unlock();

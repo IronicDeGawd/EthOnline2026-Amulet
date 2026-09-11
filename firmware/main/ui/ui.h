@@ -18,6 +18,7 @@ typedef enum {
     UI_LEDGER,        // swipe right from HOME: pair / paired / removed
     UI_OPTIONS,       // a yield card: up to three venues, tap one, swipe to dismiss
     UI_AGENT,         // who is asking: the agent's face and name, tap to see what they want
+    UI_SWAP,          // swipe up from HOME: pick a pair and ask the agent to find a route
 } ui_state_t;
 
 typedef enum { UI_PAIR_NONE, UI_PAIR_PAIRED, UI_PAIR_REMOVED } ui_pair_t;
@@ -51,6 +52,13 @@ void ui_show_agent(const agent_t *a);
 bool ui_take_tap(void);   // true once per tap on the agent screen
 void ui_show_options(const amulet_options_t *o);  // yield card: tap a row to pick, swipe to dismiss
 bool ui_take_pick(int *idx);                       // true once per tapped row
+// The one screen the wearer starts something from. Two pills choose the pair, the third asks
+// the agent to go and find a route; whatever comes back is an ordinary proposal and is checked
+// like one. Asking is not approving.
+void ui_show_swap(void);
+bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap);  // true once per Go
+void ui_swap_waiting(const char *note);            // "Asking the agent...", or a refusal
+
 void ui_show_picked(const char *venue);            // "Picked · Spark WETH", the agent is building the proposal             // after a swipe: "Declined" / "Dismissed"
 void ui_show_blocked(const char *reason);          // "Brain offline", "Unlock your Ledger", ...
 void ui_show_idle(void);                           // the reactor; backlight to half
