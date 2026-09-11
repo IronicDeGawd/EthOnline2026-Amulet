@@ -23,7 +23,10 @@
   .btn.quiet { border-color: var(--rule); color: var(--ink-2); }
   .btn.quiet:hover { border-color: var(--ink); color: var(--ink); }
 
-  figure.device { margin: 0; }
+  /* The pendant reads as belonging to the headline, so it is seated between the
+     headline's centre and the column's. useSeat.ts moves the drawn one by the same
+     amount, so the static and animated pendants land in the same place. */
+  figure.device { margin: 0; transform: translateY(-76px); }
   figure.device svg { display: block; width: 100%; height: auto; }
   figcaption { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--rule);
                display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 14px; color: var(--ink-2); }
@@ -46,10 +49,16 @@
 @media (max-width: 1000px) {
     .shell { padding: 0 24px; }
     .top .shell { padding-left: 24px; padding-right: 24px; }
-    .hero .shell { grid-template-columns: 1fr; gap: 48px; padding-top: 56px; padding-bottom: 64px; }
-    figure.device { order: -1; max-width: 460px; }
+    .hero .shell { gap: 40px; padding-top: 56px; padding-bottom: 64px; }
+    figure.device { transform: none; }
     .top nav { gap: 20px; font-size: 14px; }
     .top nav a[data-secondary] { display: none; }
+}
+/* Below this the two columns stop being two columns. The words go first: the sentence is
+   what the page is for, and a reader who has not read it yet has no idea what the object is. */
+@media (max-width: 700px) {
+    .hero .shell { grid-template-columns: 1fr; gap: 40px; }
+    figure.device { max-width: 460px; margin: 0 auto; }
 }
 @media (max-width: 560px) {
     body { font-size: 16px; }

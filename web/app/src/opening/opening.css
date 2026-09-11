@@ -40,8 +40,11 @@
     .stage { display: block; view-timeline-name: --opening; }
     .pin   { position: sticky; top: 0; height: 100vh; z-index: 2; pointer-events: none; }
     .view  { height: 100%; max-width: none; margin: 0; padding: 0; background: none; }
-    .seat  { position: absolute; inset: 0; display: grid; place-items: center; padding: 150px 24px 0; }
-    .lean  { width: min(100%, calc((100vh - 170px) * 2.1), 1712px); }
+    .seat  { position: absolute; inset: 0; display: grid; place-items: center; padding: 130px 24px 0; }
+    /* The drawing is 2.1 wide for 1 tall. 130px above it carries the title strip and 90px
+       below it is air: the old 170px allowance left ten pixels, and the callout leaders,
+       which paint outside the box, crossed the bottom edge of a short window. */
+    .lean  { width: min(100%, calc((100vh - 220px) * 2.1), 1712px); }
     .hero  { margin-top: -100vh; position: relative; z-index: 1; }
     .hero .shell { min-height: 100vh; }
     figure.device svg.static { visibility: hidden; }
@@ -85,8 +88,10 @@
 @media (max-width: 1000px) {
     .view { padding: 0 24px 32px; }
     svg.assembly .callouts { display: none; }
-    .lean { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
-    svg.assembly { min-width: 620px; }
+    /* Nothing moves here: the pendant is a picture on the first screen and the parts are a
+       picture on the second. So the drawing fits the phone instead of being dragged across
+       it -- a sideways scroll most readers never find hides four of the seven parts. */
+    svg.assembly { width: 100%; }
     .partlist {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 0 32px; margin: 8px 0 0; padding: 0; list-style: none;
@@ -96,4 +101,10 @@
 }
 @media (max-width: 560px) {
     .partlist { grid-template-columns: 1fr; }
+}
+
+/* A laptop in a short window has no room for the pin paragraph beside the drawing. The
+   scale bar stays; the prose goes, and the same detail is in the section below. */
+@media (min-width: 1001px) and (max-height: 800px) {
+  .view .corner p { display: none; }
 }

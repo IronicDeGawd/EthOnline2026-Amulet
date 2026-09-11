@@ -29,7 +29,7 @@ export function useSeat(refs: {
       const cy = lean.offsetTop + geo.cy * lean.offsetHeight
       const c = col.getBoundingClientRect()                                        /* the words on the left */
       const fx = (f.left - s.left) + f.width * 0.5
-      const fy = (c.top - s.top) + c.height * 0.5 - 40
+      const fy = (c.top - s.top) + c.height * 0.5 - 76   /* matches figure.device's own lift */
       const k = (f.width * 192 / 620) / (geo.r * lean.offsetWidth)
       const u = 2100 / lean.offsetWidth                                            /* screen px -> drawing units */
       const seat = (lean.parentNode as HTMLElement).getBoundingClientRect()
