@@ -20,7 +20,8 @@
   "simB": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
   "swapSim": "0xff79706c842E4421948Ae1e1050EE4594a4240E5",
   "weth9Sentinel": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
-  "amuletAccount": "0x23cf5ab5486094e36f642b98c7c7d51d1c3f8253",
+  "amuletAccount": "0xea49e49df36de1ac200e588e9b312cf479714123",
   "amuletLogV1": "0xA6fA7D6F47c8aDCe20396E526E5a586bF4099Ab3",
-  "amuletLogBlock": 11678432
+  "amuletLogBlock": 11678432,
+  "amuletAccountV1": "0x23cf5ab5486094e36f642b98c7c7d51d1c3f8253"
 }

@@ -137,7 +137,9 @@ static void show(lv_obj_t *o, bool on) { if (on) lv_obj_clear_flag(o, LV_OBJ_FLA
 #define HOLD_MS       1200
 #define HOLD_GRACE_MS 300     // ignore a finger already down when the screen appears
 #define HOLD_SHOW_MS  150     // a swipe starts within this; only a real hold shows the arc
-#define SWIPE_PX      40      // drag this far from the press point and it is a swipe, not a hold
+#define SWIPE_MS      400     // a swipe begins fast; past this a drag is a finger settling
+#define SWIPE_FAR_PX  100     // unless it travels this far, which nobody does by accident
+#define SWIPE_PX      50      // drag this far from the press point and it is a swipe, not a hold
 typedef struct {
     lv_obj_t *arc;
     void (*view)(bool on);          // swap the screen between resting and holding
@@ -208,7 +210,12 @@ static void hold_event(lv_event_t *e)
         // swipe. Any drag of SWIPE_PX from the press point counts, whatever the speed.
         lv_point_t p; lv_indev_get_point(lv_indev_active(), &p);
         int dx = p.x - s_press_pt.x, dy = p.y - s_press_pt.y;
-        if (dx * dx + dy * dy >= SWIPE_PX * SWIPE_PX) {
+        // A swipe is fast, a hold is not. Fifty pixels is five millimetres on this screen, which
+        // a finger covers just by settling during a 1.2 s hold — so distance alone cannot tell
+        // them apart. Only the first moments of a press can swipe cheaply; after that it takes
+        // a deliberate journey across the disc.
+        int limit = (now - s_press_at) < SWIPE_MS ? SWIPE_PX : SWIPE_FAR_PX;
+        if (dx * dx + dy * dy >= limit * limit) {
             lv_dir_t dir = (dx * dx >= dy * dy) ? (dx > 0 ? LV_DIR_RIGHT : LV_DIR_LEFT) : (dy > 0 ? LV_DIR_BOTTOM : LV_DIR_TOP);
             swiped(h, dir);
             return;
@@ -220,7 +227,16 @@ static void hold_event(lv_event_t *e)
         if (held >= HOLD_MS) { s_press_counts = false; s_hold_done = true; s_confirm = true; ESP_LOGI(TAG, "hold confirmed"); }
         return;
     }
-    if (code == LV_EVENT_GESTURE) { swiped(h, lv_indev_get_gesture_dir(lv_indev_active())); return; }
+    if (code == LV_EVENT_GESTURE) {
+        // LVGL raises this from velocity, and reports it late on this touch controller — late
+        // enough to land in the middle of a hold. Same rule: young press, or a long journey.
+        lv_point_t p; lv_indev_get_point(lv_indev_active(), &p);
+        int dx = p.x - s_press_pt.x, dy = p.y - s_press_pt.y;
+        if ((now - s_press_at) < SWIPE_MS || dx * dx + dy * dy >= SWIPE_FAR_PX * SWIPE_FAR_PX) {
+            swiped(h, lv_indev_get_gesture_dir(lv_indev_active()));
+        }
+        return;
+    }
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         bool tap = code == LV_EVENT_RELEASED && !s_swiped && !s_hold_view && (now - s_press_at) < TAP_MS
                    && (now - s_shown_at) > HOLD_GRACE_MS;
@@ -677,9 +693,9 @@ static void build_options(void)
 // what comes back is a proposal and goes through the same policy check as any other.
 static const char *SW_TOKENS[] = { "ETH", "USDC" };
 #define SW_NTOK 2
-#define SW_ROW0_Y 74
-#define SW_ROW_H  44
-#define SW_GO_Y   156
+#define SW_ROW0_Y 66
+#define SW_ROW_H  42
+#define SW_GO_Y   158
 #define SW_GO_H   38
 
 static void swap_view(bool on) { (void)on; }
@@ -711,7 +727,7 @@ static void swap_tap(const lv_point_t *at)
 static void build_swap(void)
 {
     lv_obj_t *s = s_scr[UI_SWAP] = screen(&bg_base, NULL);
-    s_sw_title = text(s, &manrope_700_15, C_TEXT, 44, "Swap");
+    s_sw_title = text(s, &manrope_700_15, C_TEXT, 36, "Swap");
     static const char *SIDE[2] = { "From", "To" };
     for (int i = 0; i < 2; i++) {
         int y = SW_ROW0_Y + i * SW_ROW_H;

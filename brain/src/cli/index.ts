@@ -601,6 +601,38 @@ async function showEns(client: ReturnType<typeof sepoliaClient>): Promise<void> 
 
 // Deploys a fresh AmuletLog from the sealed deployer key and records it in the deployments
 // file, keeping the previous address under amuletLogV1 so old history stays readable.
+// Redeploys the account that holds the position and executes signed intents, and points the
+// deployments file at it. The old one keeps whatever is in it; the Ledger can sweep it.
+program.command("deploy-account").description("deploy the account that executes signed intents")
+  .option("--fund <eth>", "send this much to it from the deployer once it is up")
+  .action(async (o) => {
+    const s = await loadSecrets();
+    const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
+    const artifact = JSON.parse(
+      readFileSync(resolve(REPO_ROOT, "contracts", "out", "AmuletAccount.sol", "AmuletAccount.json"), "utf8"),
+    ) as { bytecode: { object: `0x${string}` }; abi: unknown[] };
+    const signer = signerFromKey(rpc, deployerKey(s, log));
+    log(`deploying AmuletAccount owned by ${LEDGER_ADDRESS}`);
+    const hash = await signer.wallet.deployContract({
+      abi: artifact.abi as never, bytecode: artifact.bytecode.object, args: [LEDGER_ADDRESS],
+      account: signer.account, chain: sepoliaChain,
+    });
+    const r = await signer.pub.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
+    const address = r.contractAddress!;
+    log(`AmuletAccount at ${address} in block ${r.blockNumber}`);
+    const path = resolve(REPO_ROOT, "contracts", "deployments", `${SEPOLIA_CHAIN_ID}.json`);
+    const j = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    if (j.amuletAccount && j.amuletAccount !== address) j.amuletAccountV1 = j.amuletAccount;
+    j.amuletAccount = address;
+    writeFileSync(path, `${JSON.stringify(j, null, 2)}\n`);
+    log(`wrote ${path}`);
+    if (o.fund) {
+      const h2 = await signer.wallet.sendTransaction({ to: address, value: parseEther(o.fund), account: signer.account, chain: sepoliaChain });
+      await signer.pub.waitForTransactionReceipt({ hash: h2, timeout: RECEIPT_TIMEOUT_MS });
+      log(`funded with ${o.fund} ETH`);
+    }
+  });
+
 program.command("deploy-log").description("deploy the decision log contract and point the deployments file at it")
   .action(async () => {
     const s = await loadSecrets();

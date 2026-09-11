@@ -3,6 +3,33 @@ pragma solidity 0.8.28;
 
 import {PositionSim} from "./PositionSim.sol";
 
+interface IPriceSource {
+    function price() external view returns (uint256);
+}
+
+interface IERC20 {
+    function approve(address spender, uint256 amount) external returns (bool);
+}
+
+interface ISwapSim {
+    struct ExactInputSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24 fee;
+        address recipient;
+        uint256 deadline;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+        uint160 sqrtPriceLimitX96;
+    }
+
+    function exactInputSingle(ExactInputSingleParams calldata p) external payable returns (uint256);
+    function priceSource() external view returns (address);
+    function stable() external view returns (address);
+    function WETH9() external view returns (address);
+    function FEE_BPS() external view returns (uint256);
+}
+
 /// @notice A position held on the Ledger's behalf, moved only by what the Ledger signed.
 ///
 /// The Nano X cannot read our calldata: decoding a contract call needs a descriptor that only
@@ -99,10 +126,41 @@ contract AmuletAccount {
             PositionSim(market).withdraw(amount);
         } else if (kind == keccak256("Borrow")) {
             PositionSim(market).borrow(amount);
+        } else if (kind == keccak256("Swap")) {
+            _swap(market, amount, deadline, true);
+        } else if (kind == keccak256("Sell")) {
+            _swap(market, amount, deadline, false);
         } else {
             revert UnknownAction();
         }
         emit Executed(market, action, amount, used);
+    }
+
+    /// @dev The floor is computed here, at execution, from the router's own price source and
+    /// the same fee the router charges — one percent under what it should return. Nothing about
+    /// that number comes from whoever relayed the intent, so a relayer cannot let the swap go
+    /// through at any price it likes. `ethIn` true sells ETH for the stable, false the reverse.
+    function _swap(address router, uint256 amount, uint256 deadline, bool ethIn) private {
+        ISwapSim r = ISwapSim(router);
+        uint256 price = IPriceSource(r.priceSource()).price();
+        uint256 expected = ethIn ? (amount * price) / 1e20 : (amount * 1e20) / price;
+        expected = (expected * (10_000 - r.FEE_BPS())) / 10_000;
+        uint256 minOut = (expected * 99) / 100;
+        address stable = r.stable();
+        address weth = r.WETH9();
+        if (!ethIn) IERC20(stable).approve(router, amount);
+        r.exactInputSingle{value: ethIn ? amount : 0}(
+            ISwapSim.ExactInputSingleParams({
+                tokenIn: ethIn ? weth : stable,
+                tokenOut: ethIn ? stable : weth,
+                fee: 3000,
+                recipient: address(this),
+                deadline: deadline,
+                amountIn: amount,
+                amountOutMinimum: minOut,
+                sqrtPriceLimitX96: 0
+            })
+        );
     }
 
     /// @notice The owner can always take the account's ETH back out, signed on the device as a

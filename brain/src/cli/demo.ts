@@ -194,17 +194,31 @@ export async function swapAsk(d: DemoDeps, from: Side, to: Side, amountIn: bigin
   if (!pv.ok) { d.log(`  the policy refuses it: ${pv.reason}`); return; }
   wrist(d);
   const id = ulid();
+  const account = d.dep.amuletAccount!;
+  // Typed data here too: the Ledger reads "Swap 0.01 ETH for 24.44 USDC" rather than a router
+  // call it cannot name, and the account pays — the wearer's own key never needs gas.
+  const intent = {
+    summary: built.human, action: q.from === "ETH" ? ("Swap" as const) : ("Sell" as const),
+    market: d.dep.swapSim, amount: toHex(q.amountIn),
+    nonce: toHex(await accountNonce(d.sepolia, account)),
+    deadline: toHex(BigInt(Math.floor(Date.now() / 1000) + 900)), account,
+  };
   d.log(`  proposing: ${built.human}`);
   d.pendant.send({
     type: "proposal", id, agent: AGENTS.swap.label, tier: 2, action: "SWAP",
     human: built.human, rationale: built.rationale,
     tx: { chainId: d.dep.chainId, to: built.to, value: toHex(built.value), data: built.data,
           nonce: 0, maxFeePerGas: toHex(0n), maxPriorityFeePerGas: toHex(0n), gas: 200_000 },
-    evidence: EVIDENCE, expiresAt,
+    evidence: EVIDENCE, expiresAt, intent,
   });
   const decision = await d.pendant.awaitDecision(id, 300_000);
   d.log(`  the wrist said: ${decision.result}`);
   await note(d, id, AGENTS.swap.label, built.to, built.value, decision.result);
+  if (decision.result === "approved" && decision.signature) {
+    const hash = await d.relayer.relay(intent as never, decision.signature);
+    const r = await d.sepolia.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
+    d.log(`  relayed and mined in block ${r.blockNumber}: https://sepolia.etherscan.io/tx/${hash}`);
+  }
 }
 
 export const MENU = `
