@@ -364,4 +364,17 @@ open("assembly.svg.part", "w").write(svg)
 # page can put it exactly where the hero pendant used to be
 import json
 json.dump({"cx": O[0]/2100, "cy": O[1]/1000, "r": R1/2100, "K": K}, open("assembly.json", "w"))
+
+# the React app reads the same drawing and the same numbers; one source of geometry
+import os, shutil
+APP = "app/src/generated"
+if os.path.isdir(os.path.dirname(APP)):
+    os.makedirs(APP, exist_ok=True)
+    open(APP + "/assembly.svg", "w").write(svg)
+    shutil.copyfile("assembly.json", APP + "/assembly.json")
+    # the two numbers the keyframes need before any script runs
+    open(APP + "/geo.css", "w").write(
+        ".assembly .rig { transform-origin: %.2f%% %.2f%%; --invk: %.4f; }\n"
+        % (O[0]/2100*100, O[1]/1000*100, 1/K))
+
 print("groups:", len(groups), "bytes:", len(svg))

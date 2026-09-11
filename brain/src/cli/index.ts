@@ -37,7 +37,7 @@ import { makeRecorder } from "../chain/amuletlog.js";
 import { defaultPolicy } from "../engine/policy.js";
 import { makeNovaExplainer, templateExplainer } from "../engine/llm.js";
 import { makeNovaDecider } from "../engine/decide.js";
-import { fetchHistory } from "../data/graph/history.js";
+import { AMULET_SUBGRAPH, fetchHistory } from "../data/graph/history.js";
 import { formatQuote, readEthUsd, syncSimPrice } from "../chain/oracle.js";
 import { portfolioMessage, readPortfolio } from "../chain/portfolio.js";
 import { PendantLink } from "../pendant/ws.js";
@@ -713,6 +713,67 @@ program.command("keygen").description("fresh hot key for AmuletLog.record; shown
     const pk = generatePrivateKey();
     console.log(`address ${privateKeyToAccount(pk).address}`);
     console.log(`BRAIN_LOG_PK=${pk}`);
+  });
+
+program.command("web-data").description("what the dashboard cannot read from the subgraph: the caps and status that live on ENS, plus the selector and address tables, as JSON on stdout")
+  .option("--out <file>", "write here instead of stdout")
+  .action(async (o: { out?: string }) => {
+    // The caps are text records on each agent's name and the status is a record on the policy
+    // name, so neither is an entity in the subgraph. Reading them here, at build time, keeps an
+    // RPC endpoint out of the browser while still letting a judge check the name themselves.
+    const s = await loadSecrets();
+    const dep = loadDeployments();
+    const client = sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL"));
+    const block = await headBlock(client);
+    const status = await readRecords(client, [...STATUS_KEYS], POLICY_NAME);
+
+    const agents = [];
+    for (const key of Object.keys(AGENTS) as AgentKey[]) {
+      const name = agentName(key);
+      const r = await readRecords(client, ["amulet.max_value_wei", "amulet.allowed"], name);
+      agents.push({
+        label: key,
+        name,
+        title: AGENTS[key].title,
+        capWei: r["amulet.max_value_wei"] ?? null,
+        // one group per target: "0xtarget:0xsel,0xsel;0xtarget2:0xsel"
+        allowed: (r["amulet.allowed"] ?? "").split(";").filter(Boolean).map((part) => {
+          const [target, sels] = part.split(":");
+          return { target, selectors: (sels ?? "").split(",").filter(Boolean) };
+        }),
+      });
+    }
+
+    // selector -> the word a person uses for it, address -> the venue's name
+    const verbs: Record<string, string> = {};
+    for (const [word, sel] of Object.entries(dep.selectors ?? {})) verbs[String(sel).toLowerCase()] = word;
+    const venues: Record<string, string> = {
+      [dep.simA.toLowerCase()]: "Sim-A",
+      [dep.simB.toLowerCase()]: "Sim-B",
+      [dep.swapSim.toLowerCase()]: "Swap sim",
+      [dep.sUSDC.toLowerCase()]: "sUSDC",
+    };
+
+    const out = {
+      readAt: new Date().toISOString(),
+      chainId: dep.chainId,
+      block: Number(block),
+      policyName: POLICY_NAME,
+      status: status["amulet.status"] ?? null,
+      lastAction: status["amulet.last-action"] ?? null,
+      agents,
+      verbs,
+      venues,
+      // the same 16x16 faces the pendant draws, so the dashboard shows the agent
+      // the way the wrist does rather than a second drawing that can drift
+      faces: Object.fromEntries(Object.keys(AGENTS).map((k) => [k, FACES[k]])),
+      amuletLog: dep.amuletLog,
+      account: dep.amuletAccount,
+      subgraph: AMULET_SUBGRAPH,
+      explorer: "https://sepolia.etherscan.io",
+    };
+    const json = JSON.stringify(out, null, 2) + "\n";
+    if (o.out) { writeFileSync(resolve(o.out), json); log(`wrote ${o.out}`); } else process.stdout.write(json);
   });
 
 program.parseAsync().catch((e) => { console.error(`amulet: ${(e as Error).message}`); process.exit(1); });

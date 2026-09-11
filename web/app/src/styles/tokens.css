@@ -1,0 +1,22 @@
+/* The ten tokens, verbatim from web/page.py. Do not re-pick these values. */
+:root {
+  --ground: #e9ecee;
+  --paper:  #e2e4e2;
+  --ink:    #14181c;
+  --ink-2:  #4a545c;
+  --rule:   #c5cbd0;
+  --gold:   #b8901f;
+  --screen: #0d1114;
+  --break:  #b5631e;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink);
+  font-family: Archivo, system-ui, -apple-system, sans-serif;
+  font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+}
+.data { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+a { color: var(--ink); text-decoration: none; }
+a:focus-visible, .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+.shell { max-width: 1360px; margin: 0 auto; padding: 0 40px; }

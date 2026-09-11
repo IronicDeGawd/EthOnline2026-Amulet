@@ -1,0 +1,99 @@
+/* Ported verbatim from web/page.py. The specificity here is load-bearing:
+   `path.solid` must outrank `g[stroke-linejoin] path` or the fills never drain,
+   and `turn` must run on the SVG's own .rig group, never on a wrapper div. */
+
+/* ---- the object opens as you scroll ----------------------------------------------------
+   One drawing, every motion computed in one place. At the top of the page it is the pendant, face-on and upright, seated where the
+   hero shows it. As you scroll it turns into the drawing's own oblique view, its seven parts
+   slide apart along the axis they were drawn on, and the colour drains out until only the line
+   work is left. Nothing is swapped for anything else.
+   build.py draws every face foreshortened by K along the 45° axis; stretching the box by 1/K
+   along that axis and turning it 45° is exactly what makes the front face a circle again, so
+   the face-on pendant and the exploded drawing are the same paths under one transform.
+   The timeline is the stage's own window (view-timeline), not the page. */
+.stage { position: relative; display: flex; flex-direction: column; }
+.pin   { order: 2; }
+.view  { position: relative; max-width: 1760px; margin: 0 auto; padding: 0 24px 72px; background: var(--paper); }
+.seat  { }
+.assembly .rig { transform-box: view-box; }  /* transform-origin + --invk come from generated/geo.css */
+.opening-space { display: none; }
+.assembly .part { transform-box: fill-box; }
+.assembly .solid { fill: #e2e4e2; }
+.assembly .screen { opacity: 0; font-family: Manrope, Archivo, system-ui, sans-serif; }
+.assembly .axis { opacity: 1; }
+.object-tail { background: var(--paper); }
+
+@keyframes turn  { 0%   { transform: translate(var(--x0, 0px), var(--y0, 0px)) scale(var(--k0, 1)) rotate(45deg) rotate(45deg) scaleX(var(--invk)) rotate(-45deg); }
+                   40%  { transform: translate(var(--x1, 0px), var(--y1, 0px)) scale(1) rotate(0deg) rotate(45deg) scaleX(1) rotate(-45deg); }
+                   100% { transform: translate(0px, 0px) scale(1) rotate(0deg) rotate(45deg) scaleX(1) rotate(-45deg); } }
+@keyframes apart { from { transform: translate(calc(-1 * var(--dx)), calc(-1 * var(--dy))); }
+                   to   { transform: translate(0, 0); } }
+@keyframes drain { from { fill: var(--tint); }
+                   to   { fill: #e2e4e2; } }
+@keyframes ink   { from { stroke-opacity: 0.55; }
+                   to   { stroke-opacity: 1; } }
+@keyframes reveal{ from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade  { from { opacity: 1; } to { opacity: 0; } }
+
+@media (min-width: 1001px) and (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .stage { display: block; view-timeline-name: --opening; }
+    .pin   { position: sticky; top: 0; height: 100vh; z-index: 2; pointer-events: none; }
+    .view  { height: 100%; max-width: none; margin: 0; padding: 0; background: none; }
+    .seat  { position: absolute; inset: 0; display: grid; place-items: center; padding: 150px 24px 0; }
+    .lean  { width: min(100%, calc((100vh - 170px) * 2.1), 1712px); }
+    .hero  { margin-top: -100vh; position: relative; z-index: 1; }
+    .hero .shell { min-height: 100vh; }
+    figure.device svg.static { visibility: hidden; }
+    .opening-space { display: block; height: 320vh; }
+    .pin .view .titling { position: absolute; top: 44px; left: 64px; right: 64px; max-width: none; padding: 0; display: flex; align-items: baseline; gap: 40px; pointer-events: auto; }
+    .view .titling h2 { margin: 0; white-space: nowrap; }
+    .view .titling p { max-width: 58ch; }
+    .view .corner  { position: absolute; right: 4%; bottom: 7%; width: 33%; max-width: 520px; pointer-events: auto; }
+    .assembly .solid { fill: var(--tint); }
+    .assembly .screen { opacity: 1; }
+
+    .assembly .rig, .assembly .axis, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path, .assembly .screen,
+    svg.assembly .callouts, .view .titling, .view .corner {
+      animation-timeline: --opening;
+      animation-range: contain 40% contain 72%;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+    }
+    .assembly .rig { animation-name: turn; animation-range: contain 0% contain 72%; animation-timing-function: ease-in-out; }
+    .assembly .part { animation-name: apart; }
+    .assembly .part:not([data-s="0"]):not([data-s="100"]) { animation-name: apart, reveal; animation-range: contain 40% contain 72%, contain 40% contain 50%; }
+    .assembly g[stroke-linejoin] path.solid { animation-name: drain; }
+    .assembly g[stroke-linejoin] path.solid.deep { animation-name: drain, reveal; animation-range: contain 40% contain 72%, contain 40% contain 54%; }
+    .assembly g[stroke-linejoin] path { animation-name: ink; }
+    .assembly g[stroke-linejoin] path.deep { animation-name: reveal; animation-range: contain 40% contain 54%; }
+    .assembly .axis { animation-name: reveal; animation-range: contain 40% contain 54%; }
+    .assembly .screen { animation-name: fade; animation-range: contain 36% contain 50%; }
+    svg.assembly .callouts, .view .titling, .view .corner { animation-name: reveal; animation-range: contain 64% contain 78%; }
+  }
+}
+  .object { background: var(--paper); border-top: 1px solid var(--rule); }
+  .view .titling { padding: 56px 40px 28px; max-width: 60ch; }
+  .view .corner  { border-top: 1px solid var(--rule); padding-top: 14px; margin: 24px 40px 0; }
+  svg.assembly .lbl { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 19px; fill: var(--ink-2); }
+  .view .scale { display: flex; align-items: baseline; gap: 14px; font-size: 13px; color: var(--ink-2); }
+  .view .corner p {
+    margin: 12px 0 0; font-size: clamp(11px, 0.94vw, 14px); line-height: 1.6; color: var(--ink-2);
+  }
+  .partlist { display: none; }
+
+@media (max-width: 1000px) {
+    .view { padding: 0 24px 32px; }
+    svg.assembly .callouts { display: none; }
+    .lean { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+    svg.assembly { min-width: 620px; }
+    .partlist {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0 32px; margin: 8px 0 0; padding: 0; list-style: none;
+    }
+    .partlist li { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--rule); font-size: 15px; }
+    .partlist b { color: var(--ink-2); font-weight: 500; }
+}
+@media (max-width: 560px) {
+    .partlist { grid-template-columns: 1fr; }
+}

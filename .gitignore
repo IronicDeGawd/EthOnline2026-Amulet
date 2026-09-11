@@ -37,3 +37,8 @@ subgraph/generated/
 subgraph/build/
 subgraph/node_modules/
 web/__pycache__/
+
+# react app
+web/app/node_modules/
+web/app/dist/
+web/app/tsconfig.tsbuildinfo

@@ -1,0 +1,60 @@
+/* Header, hero and the section-two titling. Values copied from web/page.py. */
+
+  header.top { border-bottom: 1px solid var(--rule); }
+  .top .shell { display: flex; align-items: baseline; justify-content: space-between; gap: 32px; padding: 22px 40px 18px; }
+  .wordmark { display: flex; align-items: center; gap: 11px; font-size: 19px; font-weight: 700; letter-spacing: -0.015em; }
+  .top nav { display: flex; gap: 30px; font-size: 15px; color: var(--ink-2); }
+  .top nav a:hover { color: var(--ink); }
+
+  /* ---------- section 1 ---------- */
+  .hero .shell {
+    display: grid; position: relative; grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
+    gap: 72px; align-items: center; padding-top: 88px; padding-bottom: 96px;
+  }
+  h1 { margin: 0 0 26px; font-size: clamp(40px, 5.4vw, 72px); line-height: 1.02; font-weight: 700; letter-spacing: -0.035em; }
+  h1 span { display: block; }
+  .lede { margin: 0 0 18px; max-width: 62ch; font-size: 19px; color: var(--ink-2); }
+  .lede strong { color: var(--ink); font-weight: 600; }
+  .btns { display: flex; align-items: center; gap: 12px; margin-top: 32px; }
+  .btn { display: inline-block; padding: 13px 22px; font-size: 16px; font-weight: 600; border: 1px solid var(--ink); border-radius: 2px;
+         transition: background-color .18s ease, color .18s ease, border-color .18s ease; }
+  .btn.primary { background: var(--ink); color: var(--ground); }
+  .btn.primary:hover { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+  .btn.quiet { border-color: var(--rule); color: var(--ink-2); }
+  .btn.quiet:hover { border-color: var(--ink); color: var(--ink); }
+
+  figure.device { margin: 0; }
+  figure.device svg { display: block; width: 100%; height: auto; }
+  figcaption { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--rule);
+               display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 14px; color: var(--ink-2); }
+  figcaption b { color: var(--ink); font-weight: 500; }
+
+  /* ---------- section 2 ---------- */
+  .view h2 { margin: 0 0 14px; font-size: clamp(30px, 3.1vw, 44px); line-height: 1.06; font-weight: 700; letter-spacing: -0.03em; }
+  .view p { margin: 0; font-size: 17px; color: var(--ink-2); }
+  svg.assembly { display: block; width: 100%; height: auto; overflow: visible; }
+  .object { background: var(--paper); border-top: 1px solid var(--rule); }
+  .view .titling { padding: 56px 40px 28px; max-width: 60ch; }
+  .view .corner  { border-top: 1px solid var(--rule); padding-top: 14px; margin: 24px 40px 0; }
+  svg.assembly .lbl { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 19px; fill: var(--ink-2); }
+  .view .scale { display: flex; align-items: baseline; gap: 14px; font-size: 13px; color: var(--ink-2); }
+  .view .corner p {
+    margin: 12px 0 0; font-size: clamp(11px, 0.94vw, 14px); line-height: 1.6; color: var(--ink-2);
+  }
+  .partlist { display: none; }
+
+@media (max-width: 1000px) {
+    .shell { padding: 0 24px; }
+    .top .shell { padding-left: 24px; padding-right: 24px; }
+    .hero .shell { grid-template-columns: 1fr; gap: 48px; padding-top: 56px; padding-bottom: 64px; }
+    figure.device { order: -1; max-width: 460px; }
+    .top nav { gap: 20px; font-size: 14px; }
+    .top nav a[data-secondary] { display: none; }
+}
+@media (max-width: 560px) {
+    body { font-size: 16px; }
+    .lede { font-size: 17px; }
+    .btns { flex-direction: column; align-items: stretch; }
+    .btn { text-align: center; }
+    .top nav a[data-tertiary] { display: none; }
+}
