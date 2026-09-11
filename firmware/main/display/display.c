@@ -138,7 +138,11 @@ esp_err_t display_init(void)
 
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = io, .panel_handle = panel,
-        .buffer_size = LCD_H_RES * 40, .double_buffer = false,
+        // Twenty lines, not forty. This buffer must be internal and DMA-capable, which is the
+        // only memory WiFi, TLS and BLE can use either; at forty lines a busy moment could
+        // leave a flush half-finished and two screens painted on the panel at once. Twenty
+        // lines costs one more SPI transfer per frame and nothing a wearer can see.
+        .buffer_size = LCD_H_RES * 20, .double_buffer = false,
         .hres = LCD_H_RES, .vres = LCD_V_RES, .monochrome = false,
         // Verified on hardware 2026-09-09: this panel needs X mirrored, Y left alone,
         // no swap_xy. Text reads correctly and the RGB bar order is right.

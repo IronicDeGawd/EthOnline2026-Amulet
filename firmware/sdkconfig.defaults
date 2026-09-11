@@ -37,3 +37,20 @@ CONFIG_LV_FONT_MONTSERRAT_28=y
 # TLS sessions for the RPC and the brain link allocate ~40 KB each; internal RAM is full with
 # WiFi + BLE + LVGL, so mbedtls takes its buffers from PSRAM.
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# --- internal RAM budget -------------------------------------------------------------------
+# Measured 2026-09-11: internal free dipped to 11 KB with three agents on ENS. WiFi, TLS, BLE
+# and the screen's draw buffer all need internal RAM and nothing else can use it, so the fix is
+# to move everything that does not have to be there somewhere else.
+# Tried and reverted 2026-09-11: Bluetooth's pools in external RAM, and WiFi/lwIP buffers in
+# external RAM, both crashed inside the network receive path with a spinlock assert. Code that
+# runs with the cache disabled cannot touch external RAM, and those paths do. Left here so the
+# next person does not spend the same hour finding out.
+# CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL is not set
+# TLS record buffers are allocated only while a connection is actually open, instead of being
+# held for the life of the process. Two 16 KB buffers per connection is the single largest
+# consumer we control.
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_PEER_CERT=y
+CONFIG_MBEDTLS_DYNAMIC_FREE_CONFIG_DATA=y
+# CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP is not set

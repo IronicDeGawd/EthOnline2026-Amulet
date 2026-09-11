@@ -4,6 +4,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "esp_sntp.h"
 #include <time.h>
 #include "display.h"
@@ -215,18 +216,17 @@ static void on_ws_rx(const char *data, size_t len)
 {
     char err[64];
     amulet_proposal_t p;
-    if (len < 64) {   // tiny control message; the frame is not NUL-terminated
-        char head[64]; memcpy(head, data, len); head[len] = 0;
-        if (strstr(head, "\"type\":\"portfolio\"")) {
-        char err[64];
-        if (portfolio_parse(data, len, &s_portfolio, err, sizeof err)) {
-            s_have_portfolio = true;
-        } else {
-            ESP_LOGW(TAG, "portfolio ignored: %s", err);
-        }
+    // Holdings arrive as a long message, so this check cannot live inside the short-frame
+    // branch below — it never matched there, and every portfolio fell through to be rejected
+    // as "not a proposal".
+    if (len > 20 && memmem(data, len < 40 ? len : 40, "\"portfolio\"", 11)) {
+        if (portfolio_parse(data, len, &s_portfolio, err, sizeof err)) s_have_portfolio = true;
+        else ESP_LOGW(TAG, "portfolio ignored: %s", err);
         return;
     }
-    if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
+    if (len < 64) {   // tiny control message; the frame is not NUL-terminated
+        char head[64]; memcpy(head, data, len); head[len] = 0;
+        if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
     }
     // A yield card is not a proposal: nothing to sign until a row is tapped.
     if (len > 20 && memmem(data, len < 40 ? len : 40, "\"options\"", 9)) {
@@ -573,6 +573,7 @@ void app_main(void)
     if (!s_nagents) ESP_LOGW(TAG, "no agents yet: every tier-1/2 proposal will be refused until %s answers", AMULET_ENS_PARENT);
     time_t policy_tried = time(NULL);
     bool pf_asked = false;   // ask the brain once per visit to the holdings screen
+    uint32_t heap_logged = 0;
 
 #if AMULET_FAKE_PROPOSAL
     // Fired from the idle loop the first time the Ledger is ready, rather than once at boot,
@@ -659,6 +660,17 @@ void app_main(void)
                 vTaskDelay(pdMS_TO_TICKS(1800));
                 ui_show_home();
             }
+        }
+
+        // Internal RAM is the one that runs out: WiFi, TLS, BLE and the screen's draw buffer
+        // all need it and nothing else can. Print it often enough to see the floor.
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        if (now_ms - heap_logged > 20000) {
+            heap_logged = now_ms;
+            ESP_LOGI(TAG, "heap: %u free, %u internal, %u internal low-water",
+                     (unsigned)esp_get_free_heap_size(),
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
         }
 
         // The holdings screen asks once when it opens and shows whatever comes back.
