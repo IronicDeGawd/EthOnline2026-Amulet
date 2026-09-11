@@ -1,4 +1,6 @@
+import json
 svg = open("assembly.svg.part").read()
+geo = json.load(open("assembly.json"))
 
 html = '''<!doctype html>
 <html lang="en">
@@ -40,7 +42,7 @@ html = '''<!doctype html>
 
   /* ---------- section 1 ---------- */
   .hero .shell {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
+    display: grid; position: relative; grid-template-columns: minmax(0, 1fr) minmax(0, 1.02fr);
     gap: 72px; align-items: center; padding-top: 88px; padding-bottom: 96px;
   }
   h1 { margin: 0 0 26px; font-size: clamp(40px, 5.4vw, 72px); line-height: 1.02; font-weight: 700; letter-spacing: -0.035em; }
@@ -62,64 +64,82 @@ html = '''<!doctype html>
   figcaption b { color: var(--ink); font-weight: 500; }
 
   /* ---------- section 2 ---------- */
-  .object { background: var(--paper); border-top: 1px solid var(--rule); }
-  .object .frame { position: relative; max-width: 1760px; margin: 0 auto; padding: 0 24px 72px; }
-  .object .titling, .object .corner { pointer-events: none; }
-  .object .titling { pointer-events: auto; }
-  .object .titling { position: absolute; top: 56px; left: 64px; max-width: 34ch; z-index: 1; }
-  .object h2 { margin: 0 0 14px; font-size: clamp(30px, 3.1vw, 44px); line-height: 1.06; font-weight: 700; letter-spacing: -0.03em; }
-  .object p { margin: 0; font-size: 17px; color: var(--ink-2); }
+  .view h2 { margin: 0 0 14px; font-size: clamp(30px, 3.1vw, 44px); line-height: 1.06; font-weight: 700; letter-spacing: -0.03em; }
+  .view p { margin: 0; font-size: 17px; color: var(--ink-2); }
   svg.assembly { display: block; width: 100%; height: auto; overflow: visible; }
 
 /* ---- the object opens as you scroll ----------------------------------------------------
-   One drawing, three things happening at once: it leans back from face-on, its seven parts
-   slide apart along the axis they were drawn on, and the colour drains out of them until only
-   the line work is left. Nothing is swapped for anything else.
-   The timeline is the stage's own pinned window, not the page: bound to the document, a reader
-   would only ever see the middle of it. */
-.stage { height: 320vh; position: relative; view-timeline-name: --opening; }
-.pin { position: sticky; top: 0; min-height: 100vh; display: grid; place-items: center;
-       perspective: 2200px; }
-.tilt { width: 100%; transform-origin: 50% 42%; }
+   One drawing. At the top of the page it is the pendant, face-on and upright, seated where the
+   hero shows it. As you scroll it turns into the drawing's own oblique view, its seven parts
+   slide apart along the axis they were drawn on, and the colour drains out until only the line
+   work is left. Nothing is swapped for anything else.
+   build.py draws every face foreshortened by K along the 45° axis; stretching the box by 1/K
+   along that axis and turning it 45° is exactly what makes the front face a circle again, so
+   the face-on pendant and the exploded drawing are the same paths under one transform.
+   The timeline is the stage's own window (view-timeline), not the page. */
+.stage { position: relative; display: flex; flex-direction: column; }
+.pin   { order: 2; }
+.view  { position: relative; max-width: 1760px; margin: 0 auto; padding: 0 24px 72px; background: var(--paper); }
+.seat  { }
+.lean  { transform-origin: __OX__% __OY__%; }
+.opening-space { display: none; }
 .assembly .part { transform-box: fill-box; }
+.assembly .solid { fill: #e2e4e2; }
+.assembly .screen { opacity: 0; }
+.object-tail { background: var(--paper); }
 
-@keyframes lean  { from { transform: perspective(2200px) rotateX(0deg) scale(1.12); }
-                   to   { transform: perspective(2200px) rotateX(0deg) scale(1); } }
+@keyframes turn  { 0%   { transform: translate(var(--x0, 0px), var(--y0, 0px)) scale(var(--k0, 1)) rotate(45deg) rotate(45deg) scaleX(__INVK__) rotate(-45deg); }
+                   46%  { transform: translate(var(--x1, 0px), var(--y1, 0px)) scale(1) rotate(0deg) rotate(45deg) scaleX(1) rotate(-45deg); }
+                   100% { transform: translate(0px, 0px) scale(1) rotate(0deg) rotate(45deg) scaleX(1) rotate(-45deg); } }
 @keyframes apart { from { transform: translate(calc(-1 * var(--dx)), calc(-1 * var(--dy))); }
                    to   { transform: translate(0, 0); } }
 @keyframes drain { from { fill: var(--tint); }
                    to   { fill: #e2e4e2; } }
-@keyframes ink   { from { stroke-opacity: 0.25; }
+@keyframes ink   { from { stroke-opacity: 0.55; }
                    to   { stroke-opacity: 1; } }
-@keyframes namein{ from { opacity: 0; } to { opacity: 1; } }
+@keyframes reveal{ from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade  { from { opacity: 1; } to { opacity: 0; } }
 
-@supports (animation-timeline: view()) {
-  .tilt, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path, svg.assembly .callouts {
-    animation-timeline: --opening;
-    animation-range: contain 0% contain 92%;
-    animation-timing-function: linear;
-    animation-fill-mode: both;
+@media (min-width: 1001px) and (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .stage { display: block; view-timeline-name: --opening; }
+    .pin   { position: sticky; top: 0; height: 100vh; z-index: 2; pointer-events: none; }
+    .view  { height: 100%; max-width: none; margin: 0; padding: 0; background: none; }
+    .seat  { position: absolute; inset: 0; display: grid; place-items: center; padding: 0 24px; }
+    .lean  { width: min(100%, 176vh, 1712px); }
+    .hero  { margin-top: -100vh; position: relative; z-index: 1; }
+    .hero .shell { min-height: 100vh; }
+    figure.device svg.static { visibility: hidden; }
+    .opening-space { display: block; height: 260vh; }
+    .view .titling { position: absolute; top: 56px; left: 64px; max-width: 29ch; pointer-events: auto; }
+    .view .corner  { position: absolute; right: 4%; bottom: 7%; width: 33%; max-width: 520px; pointer-events: auto; }
+    .assembly .solid { fill: var(--tint); }
+    .assembly .screen { opacity: 1; }
+
+    .lean, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path, .assembly .screen,
+    svg.assembly .callouts, .view .titling, .view .corner {
+      animation-timeline: --opening;
+      animation-range: contain 46% contain 92%;
+      animation-timing-function: linear;
+      animation-fill-mode: both;
+    }
+    .lean { animation-name: turn; animation-range: contain 0% contain 100%; animation-timing-function: ease-in-out; }
+    .assembly .part { animation-name: apart; }
+    .assembly .part:not([data-s="0"]):not([data-s="100"]) { animation-name: apart, reveal; animation-range: contain 46% contain 92%, contain 46% contain 60%; }
+    .assembly g[stroke-linejoin] path.solid { animation-name: drain; }
+    .assembly g[stroke-linejoin] path.solid.deep { animation-name: drain, reveal; animation-range: contain 46% contain 92%, contain 46% contain 66%; }
+    .assembly g[stroke-linejoin] path { animation-name: ink; }
+    .assembly g[stroke-linejoin] path.deep { animation-name: reveal; animation-range: contain 46% contain 66%; }
+    .assembly .screen { animation-name: fade; animation-range: contain 40% contain 58%; }
+    svg.assembly .callouts, .view .titling, .view .corner { animation-name: reveal; animation-range: contain 78% contain 100%; }
   }
-  .tilt { animation-name: lean; }
-  .assembly .part { animation-name: apart; }
-  .assembly .solid { animation-name: drain; }
-  .assembly g[stroke-linejoin] path { animation-name: ink; }
-  svg.assembly .callouts { animation-name: namein; animation-range: contain 78% contain 100%; }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .stage { height: auto; }
-  .pin { position: static; min-height: 0; }
-  .tilt, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path { animation: none; }
-  .assembly .solid { fill: #e2e4e2; }
-}
+  .object { background: var(--paper); border-top: 1px solid var(--rule); }
+  .view .titling { padding: 56px 40px 28px; max-width: 60ch; }
+  .view .corner  { border-top: 1px solid var(--rule); padding-top: 14px; margin: 24px 40px 0; }
   svg.assembly .lbl { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 19px; fill: var(--ink-2); }
-  .object .corner {
-    position: absolute; right: 4%; bottom: 7%; width: 33%; max-width: 520px;
-    border-top: 1px solid var(--rule); padding-top: 14px;
-  }
-  .object .scale { display: flex; align-items: baseline; gap: 14px; font-size: 13px; color: var(--ink-2); }
-  .object .corner p {
+  .view .scale { display: flex; align-items: baseline; gap: 14px; font-size: 13px; color: var(--ink-2); }
+  .view .corner p {
     margin: 12px 0 0; font-size: clamp(11px, 0.94vw, 14px); line-height: 1.6; color: var(--ink-2);
   }
   .partlist { display: none; }
@@ -148,11 +168,6 @@ html = '''<!doctype html>
     .modes .row { grid-template-columns: 1fr; gap: 18px; }
   }
 
-  @media (max-width: 1240px) {
-    .object .titling { position: static; max-width: none; padding: 56px 40px 28px; }
-    .object .corner  { position: static; right: auto; bottom: auto; width: auto; max-width: none; margin: 24px 40px 0; }
-    .object .corner p { font-size: 14px; }
-  }
 
 
   @media (max-width: 1000px) {
@@ -162,9 +177,9 @@ html = '''<!doctype html>
     figure.device { order: -1; max-width: 460px; }
     .top nav { gap: 20px; font-size: 14px; }
     .top nav a[data-secondary] { display: none; }
-    .object .frame { padding: 0 24px 32px; }
+    .view { padding: 0 24px 32px; }
     svg.assembly .callouts { display: none; }
-    .object .figwrap { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
+    .lean { overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
     svg.assembly { min-width: 620px; }
     .partlist {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -204,6 +219,27 @@ html = '''<!doctype html>
   </div>
 </header>
 
+<div class="stage">
+<div class="pin">
+  <div class="view">
+    <div class="titling">
+      <h2>Seven parts, one job</h2>
+      <p>Every piece drawn to scale from the hardware on the bench. Nothing here can sign; the Ledger is a separate device the pendant only talks to.</p>
+    </div>
+    <div class="seat"><div class="lean figwrap">__ASSEMBLY__</div></div>
+    <div class="corner">
+      <div class="scale">
+        <svg width="150" height="16" fill="none" stroke="#4a545c" stroke-width="1" aria-hidden="true">
+          <line x1="1" y1="10" x2="141" y2="10"/><line x1="1" y1="4" x2="1" y2="16"/>
+          <line x1="71" y1="6" x2="71" y2="14"/><line x1="141" y1="4" x2="141" y2="16"/>
+        </svg>
+        <span class="data">0 &#8212; 20 &#8212; 40 mm</span>
+      </div>
+      <p class="data">Every pin is spoken for. D0 reads the battery, D1 selects the display, D2 drives the motor, D3 carries display commands, D4 and D5 are the touch and clock bus, D6 the backlight, D7 the touch interrupt, and D8 through D10 the display bus. The memory-card slot is never switched on, so its pin runs the motor instead.</p>
+    </div>
+  </div>
+</div>
+
 <section class="hero">
   <div class="shell">
     <div>
@@ -217,7 +253,7 @@ html = '''<!doctype html>
     </div>
 
     <figure class="device">
-      <svg viewBox="0 0 620 560" role="img" aria-labelledby="devtitle devdesc">
+      <svg class="static" viewBox="0 0 620 560" role="img" aria-labelledby="devtitle devdesc">
         <title id="devtitle">The Amulet pendant, seen from the front</title>
         <desc id="devdesc">A 39 millimetre round display showing a proposal to repay 120 sUSDC on Aave, with a swipe-to-approve prompt, drawn with a dimension line marking its diameter.</desc>
         <g stroke="#4a545c" stroke-width="1" fill="none">
@@ -257,24 +293,12 @@ html = '''<!doctype html>
 </section>
 
 <section class="object" id="object">
-  <div class="frame">
-    <div class="titling">
-      <h2>Seven parts, one job</h2>
-      <p>Every piece drawn to scale from the hardware on the bench. Nothing here can sign; the Ledger is a separate device the pendant only talks to.</p>
-    </div>
-    <div class="stage">
-      <div class="pin"><div class="tilt"><div class="figwrap">__ASSEMBLY__</div></div></div>
-    </div>
-    <div class="corner">
-      <div class="scale">
-        <svg width="150" height="16" fill="none" stroke="#4a545c" stroke-width="1" aria-hidden="true">
-          <line x1="1" y1="10" x2="141" y2="10"/><line x1="1" y1="4" x2="1" y2="16"/>
-          <line x1="71" y1="6" x2="71" y2="14"/><line x1="141" y1="4" x2="141" y2="16"/>
-        </svg>
-        <span class="data">0 &#8212; 20 &#8212; 40 mm</span>
-      </div>
-      <p class="data">Every pin is spoken for. D0 reads the battery, D1 selects the display, D2 drives the motor, D3 carries display commands, D4 and D5 are the touch and clock bus, D6 the backlight, D7 the touch interrupt, and D8 through D10 the display bus. The memory-card slot is never switched on, so its pin runs the motor instead.</p>
-    </div>
+  <div class="opening-space"></div>
+</section>
+</div>
+
+<section class="object-tail">
+  <div class="shell">
     <ol class="partlist data">
       <li><b>1</b>cover glass &#183; capacitive touch</li>
       <li><b>2</b>round display &#183; 240 &#215; 240</li>
@@ -384,6 +408,34 @@ html = '''<!doctype html>
 </section>
 
 <script>
+  /* Seat the stacked object exactly where the hero pendant sits: measured, not guessed, so it
+     holds at any viewport width. Only the start of the motion needs numbers; the end is the
+     drawing at rest. */
+  (function () {
+    var stage = document.querySelector('.stage'), lean = document.querySelector('.lean'),
+        fig = document.querySelector('figure.device'), view = document.querySelector('.view');
+    if (!stage || !lean || !fig || !view) return;
+    var mq = window.matchMedia('(min-width: 1001px) and (prefers-reduced-motion: no-preference)');
+    var ok = window.CSS && CSS.supports && CSS.supports('animation-timeline: view()');
+    var geo = __GEO__;                        /* where the stacked object sits in the drawing */
+    function fit() {
+      if (!ok || !mq.matches) return;
+      var s = stage.getBoundingClientRect(), f = fig.getBoundingClientRect(), v = view.getBoundingClientRect();
+      var cx = (v.left - s.left) + lean.offsetLeft + geo.cx * lean.offsetWidth;   /* at rest, pinned */
+      var cy = lean.offsetTop + geo.cy * lean.offsetHeight;
+      var fx = (f.left - s.left) + f.width * 0.5, fy = (f.top - s.top) + f.height * (320 / 560);
+      var k = (f.width * 192 / 620) / (geo.r * lean.offsetWidth);
+      lean.style.setProperty('--x0', (fx - cx).toFixed(1) + 'px');
+      lean.style.setProperty('--y0', (fy - cy).toFixed(1) + 'px');
+      lean.style.setProperty('--k0', k.toFixed(4));
+      var seat = lean.parentNode.getBoundingClientRect();
+      lean.style.setProperty('--x1', ((v.left - s.left) + seat.width * 0.5 - cx).toFixed(1) + 'px');
+      lean.style.setProperty('--y1', (seat.height * 0.5 - cy).toFixed(1) + 'px');
+    }
+    fit();
+    window.addEventListener('resize', fit);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+  })();
   /* On narrow screens the edge callouts are hidden, so crop the drawing to the
      object itself instead of scrolling across the empty margin they leave. */
   (function () {
@@ -399,5 +451,8 @@ html = '''<!doctype html>
 </body>
 </html>
 '''
-open("index.html","w").write(html.replace("__ASSEMBLY__", svg))
+html = (html.replace("__ASSEMBLY__", svg).replace("__GEO__", json.dumps(geo))
+            .replace("__OX__", f"{geo['cx']*100:.2f}").replace("__OY__", f"{geo['cy']*100:.2f}")
+            .replace("__INVK__", f"{1/geo['K']:.4f}"))
+open("index.html","w").write(html)
 print("index.html written")

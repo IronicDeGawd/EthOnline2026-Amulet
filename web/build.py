@@ -15,8 +15,8 @@ S  = 7.0                                   # px per mm
 # behind carry that colour; the page fades them back to paper as the parts separate, so the same
 # drawing becomes line work without a second drawing existing anywhere.
 SOLIDS = {
-    0:   "#2b3138",   # cover glass, dark and slightly reflective
-    100: "#161a1e",   # the display itself, nearly black
+    0:   "#d5dade",   # the case, light alloy, exactly the colour the hero has always shown
+    100: "#0d1114",   # the display itself, the screen colour of the hero
     215: "#2f5d50",   # carrier board, board green
     320: "#242a30",   # the module under its shield can
     395: "#b8901f",   # antenna, copper
@@ -38,6 +38,10 @@ def ell(C, R, t0=0.0, t1=360.0, n=96, close=True, ry=None):
     d = "M" + " L".join(fmt(p) for p in pts)
     return d + (" Z" if close and abs(t1-t0) >= 359 else "")
 
+# Anything that only exists because the part has thickness is tagged `deep`. Face-on, at the
+# top of the page, a part is just its front face; the depth appears as the object turns.
+DEEP = 'class="deep"'
+
 def cyl(C, R, th, stroke=INK, w=1.3, ry=None):
     """front face + visible back arc + two side walls"""
     B = off(C, th)
@@ -45,9 +49,9 @@ def cyl(C, R, th, stroke=INK, w=1.3, ry=None):
     a = f2s(C, R, 0); b = f2s(C, -R, 0)
     a2 = f2s(B, R, 0); b2 = f2s(B, -R, 0)
     return (f'<path d="{ell(C,R,ry=rv)}" stroke="{stroke}" stroke-width="{w}"/>'
-            f'<path d="{ell(B,R,0,180,48,False,ry=rv)}" stroke="{stroke}" stroke-width="{w}"/>'
-            f'<path d="M{fmt(a)} L{fmt(a2)}" stroke="{stroke}" stroke-width="{w}"/>'
-            f'<path d="M{fmt(b)} L{fmt(b2)}" stroke="{stroke}" stroke-width="{w}"/>')
+            f'<path d="{ell(B,R,0,180,48,False,ry=rv)}" stroke="{stroke}" stroke-width="{w}" {DEEP}/>'
+            f'<path d="M{fmt(a)} L{fmt(a2)}" stroke="{stroke}" stroke-width="{w}" {DEEP}/>'
+            f'<path d="M{fmt(b)} L{fmt(b2)}" stroke="{stroke}" stroke-width="{w}" {DEEP}/>')
 
 def slab(C, w_, h_, th, stroke=INK, w=1.3):
     """box whose front face is perpendicular to the axis"""
@@ -55,9 +59,9 @@ def slab(C, w_, h_, th, stroke=INK, w=1.3):
     c = [f2s(C,-w_/2,-h_/2), f2s(C,w_/2,-h_/2), f2s(C,w_/2,h_/2), f2s(C,-w_/2,h_/2)]
     b = [f2s(B,-w_/2,-h_/2), f2s(B,w_/2,-h_/2), f2s(B,w_/2,h_/2), f2s(B,-w_/2,h_/2)]
     s  = f'<path d="M{fmt(c[0])} L{fmt(c[1])} L{fmt(c[2])} L{fmt(c[3])} Z" stroke="{stroke}" stroke-width="{w}"/>'
-    s += f'<path d="M{fmt(b[1])} L{fmt(b[2])} L{fmt(b[3])}" stroke="{stroke}" stroke-width="{w}"/>'
+    s += f'<path d="M{fmt(b[1])} L{fmt(b[2])} L{fmt(b[3])}" stroke="{stroke}" stroke-width="{w}" {DEEP}/>'
     for i in (1,2,3):
-        s += f'<path d="M{fmt(c[i])} L{fmt(b[i])}" stroke="{stroke}" stroke-width="{w}"/>'
+        s += f'<path d="M{fmt(c[i])} L{fmt(b[i])}" stroke="{stroke}" stroke-width="{w}" {DEEP}/>'
     return s
 
 def frect(C, u, v, w_, h_, stroke=INK2, wd=1.0):
@@ -78,22 +82,23 @@ def cyl_fill(C, R, th, ry=None, tint=None):
     a, b   = f2s(C, R, 0), f2s(C, -R, 0)
     a2, b2 = f2s(B, R, 0), f2s(B, -R, 0)
     t = tint or SOLIDS.get(PART)
-    k = f'class="solid" style="--tint:{t}"' if t else ""
+    k  = f'class="solid" style="--tint:{t}"' if t else ""
+    kd = f'class="solid deep" style="--tint:{t}"' if t else DEEP
     return (f'<path d="{ell(C,R,ry=rv)}" fill="{PAPER}" stroke="none" {k}/>'
-            f'<path d="{ell(B,R,ry=rv)}" fill="{PAPER}" stroke="none" {k}/>'
-            f'<path d="M{fmt(a)} L{fmt(a2)} L{fmt(b2)} L{fmt(b)} Z" fill="{PAPER}" stroke="none" {k}/>')
+            f'<path d="{ell(B,R,ry=rv)}" fill="{PAPER}" stroke="none" {kd}/>'
+            f'<path d="M{fmt(a)} L{fmt(a2)} L{fmt(b2)} L{fmt(b)} Z" fill="{PAPER}" stroke="none" {kd}/>')
 
 def slab_fill(C, w_, h_, th, tint=None):
     B = off(C, th)
     c = [f2s(C,-w_/2,-h_/2), f2s(C,w_/2,-h_/2), f2s(C,w_/2,h_/2), f2s(C,-w_/2,h_/2)]
     b = [f2s(B,-w_/2,-h_/2), f2s(B,w_/2,-h_/2), f2s(B,w_/2,h_/2), f2s(B,-w_/2,h_/2)]
     t = tint or SOLIDS.get(PART)
-    k = f'class="solid" style="--tint:{t}"' if t else ""
-    q = c + [b[1], b[2], b[3]]
+    k  = f'class="solid" style="--tint:{t}"' if t else ""
+    kd = f'class="solid deep" style="--tint:{t}"' if t else DEEP
     return (f'<path d="M{fmt(c[0])} L{fmt(c[1])} L{fmt(c[2])} L{fmt(c[3])} Z" fill="{PAPER}" stroke="none" {k}/>'
-            f'<path d="M{fmt(b[0])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(b[3])} Z" fill="{PAPER}" stroke="none" {k}/>'
-            f'<path d="M{fmt(c[1])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(c[2])} Z" fill="{PAPER}" stroke="none" {k}/>'
-            f'<path d="M{fmt(c[2])} L{fmt(b[2])} L{fmt(b[3])} L{fmt(c[3])} Z" fill="{PAPER}" stroke="none" {k}/>')
+            f'<path d="M{fmt(b[0])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(b[3])} Z" fill="{PAPER}" stroke="none" {kd}/>'
+            f'<path d="M{fmt(c[1])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(c[2])} Z" fill="{PAPER}" stroke="none" {kd}/>'
+            f'<path d="M{fmt(c[2])} L{fmt(b[2])} L{fmt(b[3])} L{fmt(c[3])} Z" fill="{PAPER}" stroke="none" {kd}/>')
 
 def knurl(C, R, th, n=110, depth=9):
     """machined ridges around a rim"""
@@ -103,7 +108,7 @@ def knurl(C, R, th, n=110, depth=9):
         a = math.radians(180 * i / (n-1))          # visible half only
         p1 = f2s(C, R*math.cos(a), R*math.sin(a))
         p2 = f2s(B, (R-depth)*math.cos(a), (R-depth)*math.sin(a))
-        out.append(f'<path d="M{fmt(p1)} L{fmt(p2)}" stroke="{RULE}" stroke-width="0.8"/>')
+        out.append(f'<path d="M{fmt(p1)} L{fmt(p2)}" stroke="{RULE}" stroke-width="0.8" {DEEP}/>')
     return "".join(out)
 
 groups = []
@@ -112,40 +117,60 @@ def seal(sv):
     groups.append((sv, ''.join(g)))
     g.clear()
 
-# ---- 1 · cover glass -------------------------------------------------------
+# ---- 1 · cover glass and case ---------------------------------------------
+# This IS the pendant the hero shows: the alloy case with a window, the loop above it, the
+# button at its side. The window is a real hole, so the display behind shows through it while
+# the two are still stacked, and becomes its own part as they separate.
 PART = 0
 C1 = at(0); R1 = 19.5*S
-g.append(cyl_fill(C1, R1, 9))
+WIN = 17*S                                  # the window is the display's own radius
+def fx(C, x, y):  return f2s(C, -x, y)      # face coords as a reader sees them, x to the right
+g.append(f'<path d="{ell(C1, R1)} {ell(C1, WIN)}" fill-rule="evenodd" fill="{PAPER}" stroke="none" '
+         f'class="solid" style="--tint:{SOLIDS[0]}"/>')
 g.append(knurl(C1, R1, 9))
 g.append(cyl(C1, R1, 9))
-g.append(f'<path d="{ell(C1, R1-11)}" stroke="{RULE}" stroke-width="1"/>')
-g.append(f'<path d="{ell(C1, R1-26)}" stroke="{INK2}" stroke-width="1" stroke-dasharray="4 9"/>')
-g.append(f'<path d="{ell(C1, R1-40, 200, 320, 40, False)}" stroke="{RULE}" stroke-width="3"/>')
+g.append(f'<path d="{ell(C1, WIN)}" stroke="{INK}" stroke-width="1"/>')
+g.append(f'<path d="{ell(C1, R1-8)}" stroke="{RULE}" stroke-width="1"/>')
+# the loop the cord runs through
+g.append(f'<path d="{ell(fx(C1, 0, -165), 5)}" stroke="{INK2}" stroke-width="1"/>')
+for sgn in (-1, 1):
+    g.append(f'<path d="M{fmt(fx(C1, sgn*10, -R1))} C{fmt(fx(C1, sgn*10, -151))} {fmt(fx(C1, sgn*7, -159))} '
+             f'{fmt(fx(C1, 0, -162))}" stroke="{INK2}" stroke-width="1"/>')
+# the side button
+bq = [fx(C1, 125, 23), fx(C1, 136.5, 23), fx(C1, 136.5, 47), fx(C1, 125, 47)]
+g.append(f'<path d="M{fmt(bq[0])} L{fmt(bq[1])} L{fmt(bq[2])} L{fmt(bq[3])} Z" fill="{PAPER}" stroke="{INK}" '
+         f'stroke-width="1" class="solid" style="--tint:{SOLIDS[0]}"/>')
 
 seal(0)
 # ---- 2 · display panel ----------------------------------------------------
+# The screen shows the proposal the hero has always shown. The words sit in the face's own
+# plane, so they read upright while the object is face-on and lie down as it turns; the page
+# fades them as the parts separate, since a bare panel has nothing to say.
 PART = 100
 C2 = at(100); R2 = 17*S
 g.append(cyl_fill(C2, R2, 17))
 g.append(cyl(C2, R2, 17))
-g.append(f'<path d="{ell(C2, R2-9)}" stroke="{RULE}" stroke-width="1"/>')
-g.append(f'<path d="{ell(C2, R2-22)}" stroke="{INK2}" stroke-width="1" stroke-dasharray="3 8"/>')
-g.append(f'<path d="{ell(C2, R2-34, 128, 392, 72, False)}" stroke="{GOLD}" stroke-width="4"/>')
-for v, hw in ((-12, 44), (0, 44), (14, 34)):
-    g.append(fline(C2, -hw, v, hw, v, INK2, 5))
-g.append(fline(C2, -16, 34, 14, 34, GOLD, 1.4))
-g.append(f'<path d="M{fmt(f2s(C2,6,30))} L{fmt(f2s(C2,16,34))} L{fmt(f2s(C2,6,38))}" stroke="{GOLD}" stroke-width="1.4"/>')
+g.append(f'<path d="{ell(C2, R2-11, 120, 420, 72, False)}" stroke="{GOLD}" stroke-width="3" stroke-linecap="round"/>')
+face = f"matrix({-P[0]:.4f} {-P[1]:.4f} {K*D[0]:.4f} {K*D[1]:.4f} {C2[0]:.1f} {C2[1]:.1f})"
+g.append(f'<g class="screen" transform="{face}" text-anchor="middle">'
+         f'<text class="sd" y="-48" font-size="10" fill="#7e8a92" letter-spacing="1">TIER 2 &#183; AAVE V3</text>'
+         f'<text y="-8" font-size="22.5" font-weight="600" fill="#f2f5f6">Repay</text>'
+         f'<text y="20" font-size="22.5" font-weight="600" fill="#f2f5f6">120 sUSDC</text>'
+         f'<text class="sd" y="44" font-size="10.5" fill="#9aa5ad">health 1.18 &#8594; 1.41</text>'
+         f'<path d="M-31 74 L20 74 M14 68 L21 74 L14 80" stroke="{GOLD}" stroke-width="1.4" stroke-linecap="round"/>'
+         f'<text class="sd" y="97" font-size="10" fill="#7e8a92">swipe to approve</text>'
+         f'</g>')
 # flex ribbon leaving the panel edge, folded back along the axis
 RIM = R2 - 2
 t1 = f2s(C2, -20, RIM); t2 = f2s(C2, 20, RIM)
 t3 = off(t2, 54); t4 = off(t1, 54)
-g.append(f'<path d="M{fmt(t1)} L{fmt(t2)} L{fmt(t3)} L{fmt(t4)} Z" fill="{PAPER}" stroke="none"/>')
-g.append(f'<path d="M{fmt(t1)} L{fmt(t2)}" stroke="{RULE}" stroke-width="1"/>')
-g.append(f'<path d="M{fmt(t2)} L{fmt(t3)} L{fmt(t4)} L{fmt(t1)}" stroke="{INK}" stroke-width="1.2"/>')
+g.append(f'<path d="M{fmt(t1)} L{fmt(t2)} L{fmt(t3)} L{fmt(t4)} Z" fill="{PAPER}" stroke="none" {DEEP}/>')
+g.append(f'<path d="M{fmt(t1)} L{fmt(t2)}" stroke="{RULE}" stroke-width="1" {DEEP}/>')
+g.append(f'<path d="M{fmt(t2)} L{fmt(t3)} L{fmt(t4)} L{fmt(t1)}" stroke="{INK}" stroke-width="1.2" {DEEP}/>')
 for i in range(7):
     u = -14 + i*4.7
     q1 = off(f2s(C2, u, RIM), 12); q2 = off(f2s(C2, u, RIM), 50)
-    g.append(f'<path d="M{fmt(q1)} L{fmt(q2)}" stroke="{RULE}" stroke-width="0.8"/>')
+    g.append(f'<path d="M{fmt(q1)} L{fmt(q2)}" stroke="{RULE}" stroke-width="0.8" {DEEP}/>')
 
 seal(100)
 # ---- 3 · carrier board ----------------------------------------------------
@@ -196,8 +221,8 @@ g.append(fline(C4, 50, -27, -50, 39, RULE, 0.8))
 # USB-C shell projecting forward along the axis
 u1 = f2s(C4, -30, -H4/2); u2 = f2s(C4, 30, -H4/2)
 u3 = off(u2, -26); u4 = off(u1, -26)
-g.append(f'<path d="M{fmt(u1)} L{fmt(u2)} L{fmt(u3)} L{fmt(u4)} Z" stroke="{INK}" stroke-width="1.2"/>')
-g.append(f'<path d="M{fmt(off(u4,-0))} L{fmt(off(u3,-0))}" stroke="{RULE}" stroke-width="0.8"/>')
+g.append(f'<path d="M{fmt(u1)} L{fmt(u2)} L{fmt(u3)} L{fmt(u4)} Z" stroke="{INK}" stroke-width="1.2" {DEEP}/>')
+g.append(f'<path d="M{fmt(off(u4,-0))} L{fmt(off(u3,-0))}" stroke="{RULE}" stroke-width="0.8" {DEEP}/>')
 # antenna jack, LEDs, buttons
 g.append(fcirc(C4, -44, 48, 11, INK, 1.2))
 g.append(fcirc(C4, -44, 48, 4, INK2))
@@ -211,7 +236,7 @@ for i in range(7):
     for sgn in (-1, 1):
         p1 = f2s(C4, sgn*W4/2, v)
         p2 = off(p1, 8)
-        g.append(f'<path d="M{fmt(p1)} L{fmt(p2)}" stroke="{GOLD}" stroke-width="2.4"/>')
+        g.append(f'<path d="M{fmt(p1)} L{fmt(p2)}" stroke="{GOLD}" stroke-width="2.4" {DEEP}/>')
 
 seal(320)
 # ---- 5 · antenna ----------------------------------------------------------
@@ -221,9 +246,9 @@ g.append(slab_fill(C5, 204, 28, 14))
 b1 = f2s(C5, -108, -14); b2 = f2s(C5, 96, -14)
 b3 = f2s(C5, 96, 14);    b4 = f2s(C5, -108, 14)
 g.append(f'<path d="M{fmt(b1)} L{fmt(b2)} L{fmt(b3)} L{fmt(b4)} Z" stroke="{INK}" stroke-width="1.3"/>')
-g.append(f'<path d="M{fmt(off(b2,14))} L{fmt(off(b3,14))}" stroke="{INK}" stroke-width="1.3"/>')
-g.append(f'<path d="M{fmt(b2)} L{fmt(off(b2,14))}" stroke="{INK}" stroke-width="1.3"/>')
-g.append(f'<path d="M{fmt(b3)} L{fmt(off(b3,14))}" stroke="{INK}" stroke-width="1.3"/>')
+g.append(f'<path d="M{fmt(off(b2,14))} L{fmt(off(b3,14))}" stroke="{INK}" stroke-width="1.3" {DEEP}/>')
+g.append(f'<path d="M{fmt(b2)} L{fmt(off(b2,14))}" stroke="{INK}" stroke-width="1.3" {DEEP}/>')
+g.append(f'<path d="M{fmt(b3)} L{fmt(off(b3,14))}" stroke="{INK}" stroke-width="1.3" {DEEP}/>')
 g.append(fline(C5, -96, 0, 84, 0, INK2, 1.0))
 g.append(fline(C5, 96, 0, 132, 0, INK2, 1.0))
 g.append(fcirc(C5, 146, 0, 13, INK, 1.2))
@@ -269,9 +294,9 @@ pb = f2s(C7, 0, -H7/2)
 g.append(frect(C7, 0, -H7/2-16, 88, 32, INK, 1.2))
 for u in (-16, 16):
     q1 = f2s(C7, u, -H7/2-32); q2 = off(q1, -46)
-    g.append(f'<path d="M{fmt(q1)} L{fmt(q2)}" stroke="{INK2}" stroke-width="2"/>')
+    g.append(f'<path d="M{fmt(q1)} L{fmt(q2)}" stroke="{INK2}" stroke-width="2" {DEEP}/>')
 jc = off(f2s(C7, 0, -H7/2-32), -46)
-g.append(f'<path d="M{fmt((jc[0]-24,jc[1]-14))} L{fmt((jc[0]+24,jc[1]-14))} L{fmt((jc[0]+24,jc[1]+14))} L{fmt((jc[0]-24,jc[1]+14))} Z" stroke="{INK}" stroke-width="1.2"/>')
+g.append(f'<path d="M{fmt((jc[0]-24,jc[1]-14))} L{fmt((jc[0]+24,jc[1]-14))} L{fmt((jc[0]+24,jc[1]+14))} L{fmt((jc[0]-24,jc[1]+14))} Z" stroke="{INK}" stroke-width="1.2" {DEEP}/>')
 
 seal(560)
 # ---- axis ------------------------------------------------------------------
@@ -319,4 +344,8 @@ svg = (f'<svg viewBox="0 0 2100 1000" class="assembly" role="img" aria-label="Ex
        f'{axis}<g stroke-linejoin="round" stroke-linecap="round">{body}</g><g class="callouts">{"".join(lead)}</g></svg>')
 
 open("assembly.svg.part", "w").write(svg)
+# where the stacked object sits inside the 2100 × 1000 box, and how big its face is, so the
+# page can put it exactly where the hero pendant used to be
+import json
+json.dump({"cx": O[0]/2100, "cy": O[1]/1000, "r": R1/2100, "K": K}, open("assembly.json", "w"))
 print("groups:", len(groups), "bytes:", len(svg))
