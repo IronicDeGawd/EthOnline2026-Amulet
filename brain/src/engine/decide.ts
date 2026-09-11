@@ -46,7 +46,7 @@ function fmtUsd(units: bigint): string {
 // What the model is allowed to know: its position, the market, its own leash. The caps are
 // in the brief on purpose — an agent that cannot see its limits cannot respect them, and we
 // want to be able to say the refusals happen despite the model having been told.
-export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string): { system: string; user: string } {
+export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string, priceNote?: string): { system: string; user: string } {
   const hf = Number.isFinite(p.healthFactor) ? p.healthFactor.toFixed(3) : "none (no debt)";
   const rows = market.yield ?? [];
   const yields = rows
@@ -79,7 +79,7 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
       `position: ${p.name}  (this is the only market you may name; the venue you move to is chosen by the ranking, not by you)\n` +
       `  collateral: ${formatEther(p.collateralWei)} ETH\n` +
       `  debt: ${fmtUsd(p.debtUnits)}\n` +
-      `  price: $${(Number(p.price) / 1e8).toFixed(2)} per ETH\n` +
+      `  price: $${(Number(p.price) / 1e8).toFixed(2)} per ETH${priceNote ? ` (${priceNote})` : ""}\n` +
       `  liquidation threshold: ${p.ltBps / 100}%\n` +
       `  health factor: ${hf}  (liquidation at 1.00)\n` +
       (market.current
@@ -224,7 +224,7 @@ export function validate(d: Decision, p: Position, market: MarketContext, policy
 }
 
 export interface Decider {
-  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string): Promise<Judgement>;
+  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string, priceNote?: string): Promise<Judgement>;
 }
 
 // Reasons worth a second attempt: the model wanted something reasonable and got the shape or
@@ -236,8 +236,8 @@ export function correctable(reason: string): boolean {
 export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Decider {
   const client = new BedrockRuntimeClient({ region });
   return {
-    async decide(p, market, policy, mandate, ev, hist, lastRefusal) {
-      const { system, user } = brief(p, market, policy, mandate, ev, hist, lastRefusal);
+    async decide(p, market, policy, mandate, ev, hist, lastRefusal, priceNote) {
+      const { system, user } = brief(p, market, policy, mandate, ev, hist, lastRefusal, priceNote);
       const ask = async (messages: { role: "user" | "assistant"; content: { text: string }[] }[]) => {
         const res = await client.send(
           new ConverseCommand({

@@ -38,6 +38,7 @@ import { defaultPolicy } from "../engine/policy.js";
 import { makeNovaExplainer, templateExplainer } from "../engine/llm.js";
 import { makeNovaDecider } from "../engine/decide.js";
 import { fetchHistory } from "../data/graph/history.js";
+import { formatQuote, readEthUsd, syncSimPrice } from "../chain/oracle.js";
 import { PendantLink } from "../pendant/ws.js";
 import { Brain, type Simulation } from "../brain.js";
 
@@ -187,11 +188,40 @@ program.command("decide").description("ask the model what it would propose right
     log(`${AGENTS[agent].title} on ${pos.name}: HF ${Number.isFinite(pos.healthFactor) ? pos.healthFactor.toFixed(3) : "none"}, cap ${Number(policy.max_value_wei) / 1e18} ETH`);
     const hist = await fetchHistory(AGENTS[agent].label);
     log(hist ? `memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused` : "memory: nothing indexed yet");
-    const j = await makeNovaDecider(s.AWS_REGION || "us-east-1").decide(pos, market, policy, AGENTS[agent].mandate, undefined, hist);
+    const q = await readEthUsd(sepolia).catch(() => undefined);
+    if (q) log(formatQuote(q));
+    const j = await makeNovaDecider(s.AWS_REGION || "us-east-1").decide(
+      pos, market, policy, AGENTS[agent].mandate, undefined, hist, undefined,
+      q ? `Chainlink ${q.description}, updated ${Math.round(q.ageS / 60)} minutes ago` : undefined,
+    );
     log(`it said: ${JSON.stringify(j.decision ?? null)}`);
     log(`verdict: ${j.reason}`);
     if (j.candidate) log(`would propose: ${j.candidate.action} ${j.candidate.facts.amount ?? ""} on ${j.candidate.simName}`);
     else log("nothing goes to the wrist");
+  });
+
+// The real ETH price, from Chainlink's feed on Sepolia. --sync points the sim at it, so the
+// health factor the agent reasons about moves because the market moved, not because we typed.
+program.command("oracle").description("read Chainlink ETH/USD; --sync points the sims at it")
+  .option("--sync", "write the feed price into both sims")
+  .action(async (o) => {
+    const s = await loadSecrets();
+    const dep = loadDeployments();
+    const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
+    const sepolia = sepoliaClient(rpc);
+    const q = await readEthUsd(sepolia);
+    log(formatQuote(q));
+    if (q.stale) log("the feed has not updated in a day — not syncing anything to it");
+    if (!o.sync || q.stale) return;
+    const signer = signerFromKey(rpc, deployerKey(s, log));
+    for (const sim of [dep.simA, dep.simB]) {
+      const before = await readPosition(sepolia, sim, dep.amuletAccount ?? LEDGER_ADDRESS);
+      const hash = await syncSimPrice(signer.wallet, signer.account, sim, q.price);
+      await signer.pub.waitForTransactionReceipt({ hash });
+      const after = await readPosition(sepolia, sim, dep.amuletAccount ?? LEDGER_ADDRESS);
+      log(`${before.name}: $${Number(before.price) / 1e8} → $${Number(after.price) / 1e8}` +
+          (Number.isFinite(after.healthFactor) ? `, health factor ${after.healthFactor.toFixed(3)}` : ", no debt"));
+    }
   });
 
 program.command("status").description("one round of reads, no pendant").action(async () => {
@@ -324,6 +354,17 @@ program.command("demo").description("one key per scenario, with the pendant conn
     const d: DemoDeps = {
       sepolia, dep, policy: defaultPolicy(dep), pendant, relayer, ledger: LEDGER_ADDRESS,
       recorder: makeRecorder(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`, dep.amuletLog),
+      syncPrice: async () => {
+        const q = await readEthUsd(sepolia);
+        log(formatQuote(q));
+        if (q.stale) { log("the feed has gone quiet; leaving the sims alone"); return; }
+        const signer = signerFromKey(rpc, dk);
+        for (const sim of [dep.simA, dep.simB]) {
+          const hash = await syncSimPrice(signer.wallet, signer.account, sim, q.price);
+          await signer.pub.waitForTransactionReceipt({ hash });
+        }
+        log(`both sims now price ETH at $${(Number(q.price) / 1e8).toFixed(2)}, the same number the rest of DeFi reads`);
+      },
       askModel: async (a) => {
         const mainnet = mainnetClient(requireSecret(s, "MAINNET_RPC_URL"));
         const graph = new GraphClient(requireSecret(s, "GRAPH_STUDIO_KEY"));
@@ -349,8 +390,10 @@ program.command("demo").description("one key per scenario, with the pendant conn
         const hist = await fetchHistory(AGENTS[a].label);
         if (hist) log(`  memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused`);
         else log("  memory: nothing indexed yet");
+        const q = await readEthUsd(sepolia).catch(() => undefined);
         return makeNovaDecider(s.AWS_REGION || "us-east-1").decide(
           pos, { current: pickMarket(lending.markets, "WETH"), yield: rows }, pol, AGENTS[a].mandate, undefined, hist,
+          undefined, q ? `Chainlink ${q.description}, updated ${Math.round(q.ageS / 60)} minutes ago` : undefined,
         );
       },
       setPrice: (p) => setPrice(dep.simA, p, rpc, dk),
@@ -373,7 +416,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
       if (k === "q" || raw === "\u0003") { pendant.close(); process.exit(0); }
       if (k === "m") { console.log(MENU); return; }
       if (busy) { log("still on that one — swipe or sign on the wrist first"); return; }
-      if (!k || !"1234567890dyprs".includes(k)) return;
+      if (!k || !"1234567890dyoprs".includes(k)) return;
       busy = true;
       runScenario(k, d).catch((e) => log(`failed: ${(e as Error).message.split("\n")[0]}`)).finally(() => { busy = false; });
     });

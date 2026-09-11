@@ -22,6 +22,7 @@ export interface DemoDeps {
   relayer: Relayer;
   recorder?: Recorder;
   askModel?: (agent: AgentKey) => Promise<Judgement>;
+  syncPrice?: () => Promise<void>;
   ledger: `0x${string}`;
   setPrice: (p: bigint) => Promise<void>;
   setRecord: (name: string, key: string, value: string) => Promise<void>;
@@ -178,6 +179,7 @@ export const MENU = `
   0  put repay's cap back                0.05 ETH again
   d  let the repay bot decide            Nova chooses; the policy checks it
   y  let the yield scout decide          its own mandate, its own cap
+  o  take the real ETH price             from Chainlink, into both sims
   p  drop the Sim-A price                $1100: the health factor falls
   r  put the Sim-A price back            $1600: healthy again
   s  status                              caps, balance, nonce, pendant
@@ -216,6 +218,9 @@ export async function runScenario(k: string, d: DemoDeps): Promise<void> {
       return;
     case "d": return modelDecides(d, "repay");
     case "y": return modelDecides(d, "yield");
+    case "o":
+      if (!d.syncPrice) { d.log("no oracle wired into this run"); return; }
+      return d.syncPrice();
     case "p":
       d.log("dropping the Sim-A price to $1100");
       await d.setPrice(110_000_000_000n);
