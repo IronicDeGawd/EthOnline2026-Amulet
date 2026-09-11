@@ -13,6 +13,7 @@ import type { Position } from "../chain/positionsim.js";
 import { debtUnitsToWei, ethToDebtUnits } from "../chain/positionsim.js";
 import { CURRENT_VENUE, positionUsd, type Candidate, type MarketContext } from "./rules.js";
 import type { Evidence } from "../data/graph/freshness.js";
+import { historyLines, type AgentHistory } from "../data/graph/history.js";
 
 export interface Decision {
   act: boolean;
@@ -43,7 +44,7 @@ function fmtUsd(units: bigint): string {
 // What the model is allowed to know: its position, the market, its own leash. The caps are
 // in the brief on purpose — an agent that cannot see its limits cannot respect them, and we
 // want to be able to say the refusals happen despite the model having been told.
-export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence): { system: string; user: string } {
+export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory): { system: string; user: string } {
   const hf = Number.isFinite(p.healthFactor) ? p.healthFactor.toFixed(3) : "none (no debt)";
   const rows = market.yield ?? [];
   const yields = rows
@@ -96,7 +97,10 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
       `  a better rate is worth moving for above: ${policy.yield_delta_bps} bps\n` +
       // Where the numbers came from, in the prompt itself: the model is told which indexed
       // deployment and which block it is reasoning over, so a stale answer is its own fault.
-      (ev ? `evidence: ${ev.subgraph} deployment ${ev.deploymentId.slice(0, 12)}… at block ${ev.block}\n` : ""),
+      (ev ? `evidence: ${ev.subgraph} deployment ${ev.deploymentId.slice(0, 12)}… at block ${ev.block}\n` : "") +
+      // Its own past, read back from the subgraph that indexed it. An agent that cannot
+      // remember being refused will be refused again for the same reason.
+      historyLines(hist),
   };
 }
 
@@ -215,14 +219,14 @@ export function validate(d: Decision, p: Position, market: MarketContext, policy
 }
 
 export interface Decider {
-  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence): Promise<Judgement>;
+  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory): Promise<Judgement>;
 }
 
 export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Decider {
   const client = new BedrockRuntimeClient({ region });
   return {
-    async decide(p, market, policy, mandate, ev) {
-      const { system, user } = brief(p, market, policy, mandate, ev);
+    async decide(p, market, policy, mandate, ev, hist) {
+      const { system, user } = brief(p, market, policy, mandate, ev, hist);
       try {
         const res = await client.send(
           new ConverseCommand({

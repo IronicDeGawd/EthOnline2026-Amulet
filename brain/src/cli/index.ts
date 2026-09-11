@@ -37,6 +37,7 @@ import { makeRecorder } from "../chain/amuletlog.js";
 import { defaultPolicy } from "../engine/policy.js";
 import { makeNovaExplainer, templateExplainer } from "../engine/llm.js";
 import { makeNovaDecider } from "../engine/decide.js";
+import { fetchHistory } from "../data/graph/history.js";
 import { PendantLink } from "../pendant/ws.js";
 import { Brain, type Simulation } from "../brain.js";
 
@@ -184,7 +185,9 @@ program.command("decide").description("ask the model what it would propose right
     ]);
     const market = { current: pickMarket(lending.markets, "WETH"), yield: table.rows };
     log(`${AGENTS[agent].title} on ${pos.name}: HF ${Number.isFinite(pos.healthFactor) ? pos.healthFactor.toFixed(3) : "none"}, cap ${Number(policy.max_value_wei) / 1e18} ETH`);
-    const j = await makeNovaDecider(s.AWS_REGION || "us-east-1").decide(pos, market, policy, AGENTS[agent].mandate);
+    const hist = await fetchHistory(AGENTS[agent].label);
+    log(hist ? `memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused` : "memory: nothing indexed yet");
+    const j = await makeNovaDecider(s.AWS_REGION || "us-east-1").decide(pos, market, policy, AGENTS[agent].mandate, undefined, hist);
     log(`it said: ${JSON.stringify(j.decision ?? null)}`);
     log(`verdict: ${j.reason}`);
     if (j.candidate) log(`would propose: ${j.candidate.action} ${j.candidate.facts.amount ?? ""} on ${j.candidate.simName}`);
@@ -343,8 +346,11 @@ program.command("demo").description("one key per scenario, with the pendant conn
             log("  (simulated: Spark pays 250 bps more than Aave; the live spread is flat today)");
           }
         }
+        const hist = await fetchHistory(AGENTS[a].label);
+        if (hist) log(`  memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused`);
+        else log("  memory: nothing indexed yet");
         return makeNovaDecider(s.AWS_REGION || "us-east-1").decide(
-          pos, { current: pickMarket(lending.markets, "WETH"), yield: rows }, pol, AGENTS[a].mandate,
+          pos, { current: pickMarket(lending.markets, "WETH"), yield: rows }, pol, AGENTS[a].mandate, undefined, hist,
         );
       },
       setPrice: (p) => setPrice(dep.simA, p, rpc, dk),

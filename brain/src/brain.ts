@@ -20,6 +20,7 @@ import { readPosition, type Position } from "./chain/positionsim.js";
 import { makeRecorder, type Recorder } from "./chain/amuletlog.js";
 import { evaluate, type Candidate, type MarketContext } from "./engine/rules.js";
 import type { Decider } from "./engine/decide.js";
+import { fetchHistory } from "./data/graph/history.js";
 import { tierOf } from "./engine/tiers.js";
 import { selectorOf, withinPolicy } from "./engine/policy.js";
 import type { Explainer } from "./engine/llm.js";
@@ -211,7 +212,9 @@ export class Brain {
     // 3. The model decides, if there is one. Its answer is checked against the same policy
     // the pendant holds; anything it invents is dropped and the rules answer instead.
     if (d.decider) {
-      const j = await d.decider.decide(pos, market, d.policy, d.mandate ?? "", fresh.evidence);
+      const hist = await fetchHistory(d.agent ?? "");
+      if (hist) d.log(`memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused`);
+      const j = await d.decider.decide(pos, market, d.policy, d.mandate ?? "", fresh.evidence, hist);
       d.log(`model: ${j.decision?.act === false ? "stand down" : j.decision?.action ?? "—"} — ${j.reason}`);
       if (j.candidate) {
         const last = this.lastRuleAt.get(j.candidate.rule) ?? 0;
