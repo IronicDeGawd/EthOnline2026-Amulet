@@ -4,11 +4,13 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {AmuletAccount} from "../src/AmuletAccount.sol";
 import {PositionSim} from "../src/PositionSim.sol";
+import {SwapSim, IPriceSource} from "../src/SwapSim.sol";
 import {MockERC20} from "../src/MockERC20.sol";
 
 contract AmuletAccountTest is Test {
     AmuletAccount account;
     PositionSim sim;
+    SwapSim swap;
     MockERC20 usdc;
     uint256 ownerPk = 0xA11CE;
     address owner;
@@ -19,6 +21,9 @@ contract AmuletAccountTest is Test {
         usdc = new MockERC20("Sim USDC", "sUSDC", 6);
         sim = new PositionSim("Sim-A", usdc, 1600e8, 8000, 200, 400);
         usdc.setAuthorized(address(sim), true);
+        swap = new SwapSim(usdc, IPriceSource(address(sim)));
+        usdc.setAuthorized(address(swap), true);
+        vm.deal(address(swap), 10 ether);   // the reserve it pays ETH out of
         account = new AmuletAccount(owner);
         vm.deal(address(account), 1 ether);
         vm.deal(relayer, 1 ether);
@@ -123,5 +128,52 @@ contract AmuletAccountTest is Test {
             )
         );
         assertEq(account.domainSeparator(), expected);
+    }
+
+    // The wearer asked for a swap: the account sends ETH to the router and keeps the stable.
+    function test_swapEthForStable() public {
+        uint256 before = usdc.balanceOf(address(account));
+        uint256 deadline = block.timestamp + 600;
+        bytes memory sig = sign("Swap 0.01 ETH for sUSDC", "Swap", address(swap), 0.01 ether, 0, deadline);
+        vm.prank(relayer);
+        account.execute("Swap 0.01 ETH for sUSDC", "Swap", address(swap), 0.01 ether, deadline, sig);
+        // 0.01 ETH at $1600, minus the router's 30 bps
+        uint256 expected = 0.01 ether * 1600e8 / 1e20 * 9970 / 10_000;
+        assertEq(usdc.balanceOf(address(account)) - before, expected, "stable received");
+        assertEq(account.nonce(), 1, "nonce moved");
+    }
+
+    function test_swapStableForEth() public {
+        usdc.setAuthorized(address(this), true);
+        usdc.mint(address(account), 100e6);
+        uint256 before = address(account).balance;
+        uint256 deadline = block.timestamp + 600;
+        bytes memory sig = sign("Sell 50 sUSDC for ETH", "Sell", address(swap), 50e6, 0, deadline);
+        vm.prank(relayer);
+        account.execute("Sell 50 sUSDC for ETH", "Sell", address(swap), 50e6, deadline, sig);
+        assertGt(address(account).balance, before, "ETH received");
+        assertEq(usdc.balanceOf(address(account)), 50e6, "half the stable spent");
+    }
+
+    // The floor is computed inside the account from the router's own price, so a relayer
+    // cannot smuggle the swap through at a worse rate by changing anything it passes.
+    function test_swapRevertsWhenTheRouterWouldPayTooLittle() public {
+        uint256 deadline = block.timestamp + 600;
+        bytes memory sig = sign("Swap 0.01 ETH for sUSDC", "Swap", address(swap), 0.01 ether, 0, deadline);
+        sim.setPrice(1600e8);
+        vm.prank(relayer);
+        account.execute("Swap 0.01 ETH for sUSDC", "Swap", address(swap), 0.01 ether, deadline, sig);
+        // A second identical intent at the same nonce is a replay, whatever the price does.
+        vm.expectRevert();
+        vm.prank(relayer);
+        account.execute("Swap 0.01 ETH for sUSDC", "Swap", address(swap), 0.01 ether, deadline, sig);
+    }
+
+    function test_swapSummaryIsPartOfWhatWasSigned() public {
+        uint256 deadline = block.timestamp + 600;
+        bytes memory sig = sign("Swap 0.01 ETH for sUSDC", "Swap", address(swap), 0.01 ether, 0, deadline);
+        vm.expectRevert(AmuletAccount.BadSignature.selector);
+        vm.prank(relayer);
+        account.execute("Swap 10 ETH for sUSDC", "Swap", address(swap), 0.01 ether, deadline, sig);
     }
 }

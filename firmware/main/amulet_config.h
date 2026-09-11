@@ -9,7 +9,10 @@
 #define AMULET_ENS_PARENT      "amuletguard.eth"
 // The agents this pendant will listen to. A proposal from any other name is refused, so
 // adding an agent is a deliberate act: put its label here and reflash.
-#define AMULET_AGENT_LABELS    { "repay", "yield" }
+#define AMULET_AGENT_LABELS    { "repay", "yield", "swap" }
+// How long the Ledger link is kept after it was last needed. A second proposal usually
+// follows the first; after this the radio goes quiet and the link is rebuilt on demand.
+#define AMULET_LEDGER_IDLE_MS  60000
 #define AMULET_POLICY_NAME     "guardian.amuletguard.eth"
 #define AMULET_POLICY_RESOLVER "0xaFc05130255CaFb6cB181DBF1e81265EE5a6FB19"
 #define AMULET_POLICY_REFRESH_S   3600   // re-read this often while awake

@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "esp_sntp.h"
 #include <time.h>
 #include "display.h"
@@ -207,11 +209,21 @@ static int64_t agents_fetched_at(void)
     for (int i = 0; i < s_nagents; i++) if (s_agents[i].policy.fetched_at > newest) newest = s_agents[i].policy.fetched_at;
     return newest;
 }
+static amulet_portfolio_t s_portfolio;
+static volatile bool s_have_portfolio;
 static volatile bool s_policy_refresh_now;   // the brain saw the ENS records change
 static void on_ws_rx(const char *data, size_t len)
 {
     char err[64];
     amulet_proposal_t p;
+    // Holdings arrive as a long message, so this check cannot live inside the short-frame
+    // branch below — it never matched there, and every portfolio fell through to be rejected
+    // as "not a proposal".
+    if (len > 20 && memmem(data, len < 40 ? len : 40, "\"portfolio\"", 11)) {
+        if (portfolio_parse(data, len, &s_portfolio, err, sizeof err)) s_have_portfolio = true;
+        else ESP_LOGW(TAG, "portfolio ignored: %s", err);
+        return;
+    }
     if (len < 64) {   // tiny control message; the frame is not NUL-terminated
         char head[64]; memcpy(head, data, len); head[len] = 0;
         if (strstr(head, "\"type\":\"policy\"")) { s_policy_refresh_now = true; return; }
@@ -560,6 +572,9 @@ void app_main(void)
                  s_agents[i].policy.nallowed, s_agents[i].has_face ? ", has a face" : "");
     if (!s_nagents) ESP_LOGW(TAG, "no agents yet: every tier-1/2 proposal will be refused until %s answers", AMULET_ENS_PARENT);
     time_t policy_tried = time(NULL);
+    bool pf_asked = false;   // ask the brain once per visit to the holdings screen
+    uint32_t heap_logged = 0;
+    uint32_t ledger_used_ms = 0;   // when the Ledger was last actually needed
 
 #if AMULET_FAKE_PROPOSAL
     // Fired from the idle loop the first time the Ledger is ready, rather than once at boot,
@@ -589,12 +604,16 @@ void app_main(void)
             }
             bool brain = AMULET_BRAIN_ENABLED ? ws_is_connected() : true;
             if (brain != st.brain) { st.brain = brain; ui_set_status(&st); }
-            // Cheap on the wire but not free, so only every few seconds.
+            // The Ledger is a signer, not a data source: nothing here needs it until there is
+            // something to sign. So it is only sought while the wearer is actually looking at
+            // the Ledger screen. Everywhere else the radio stays quiet, which is both the
+            // scarce internal memory and a measurable slice of the battery.
             // Unpaired: never connect on our own, or the code would pop up while the wearer is
             // elsewhere. Pairing starts from the LEDGER screen (or at first boot).
-            if (++tick % 6 == 0 && bonded) {
+            if (++tick % 6 == 0 && bonded && ui_state() == UI_LEDGER) {
                 bool led = ledger_link_ensure(4000, NULL);
                 if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
+                if (led) ledger_used_ms = (uint32_t)(esp_timer_get_time() / 1000);
                 if (ledger_ble_is_bonded() != bonded) {
                     bonded = !bonded;
                     ui_set_pairing(bonded ? UI_PAIR_PAIRED : UI_PAIR_NONE, addr, NULL);
@@ -617,6 +636,9 @@ void app_main(void)
                 s_policy_refresh_now = false;
                 policy_tried = now;
                 bool stale;
+                ESP_LOGI(TAG, "heap before agent read: %u total, %u internal",
+                         (unsigned)esp_get_free_heap_size(),
+                         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
                 agents_refresh(&stale);
                 if (stale != st.policy_stale) { st.policy_stale = stale; ui_set_status(&st); }
             }
@@ -642,6 +664,63 @@ void app_main(void)
                 s_have_pending = false;
                 vTaskDelay(pdMS_TO_TICKS(1800));
                 ui_show_home();
+            }
+        }
+
+        // Nothing has wanted the Ledger for a while: drop the link and stop the radio. It
+        // comes back on the next proposal, which costs a few seconds hidden behind the face
+        // screen, and costs nothing at all while the pendant is just sitting on a chest.
+        if (st.ledger && !s_have_pending && ui_state() != UI_LEDGER && ui_state() != UI_LEDGER_WAIT
+            && ui_state() != UI_PAIRING && ui_state() != UI_PROPOSAL && ui_state() != UI_AGENT) {
+            uint32_t idle = (uint32_t)(esp_timer_get_time() / 1000) - ledger_used_ms;
+            if (ledger_used_ms && idle > AMULET_LEDGER_IDLE_MS) {
+                ESP_LOGI(TAG, "Ledger idle for %us - letting the link go", (unsigned)(idle / 1000));
+                ledger_ble_disconnect();
+                st.ledger = false;
+                ui_set_status(&st);
+                ledger_used_ms = 0;
+            }
+        }
+
+        // Internal RAM is the one that runs out: WiFi, TLS, BLE and the screen's draw buffer
+        // all need it and nothing else can. Print it often enough to see the floor.
+        uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        if (now_ms - heap_logged > 20000) {
+            heap_logged = now_ms;
+            ESP_LOGI(TAG, "heap: %u free, %u internal, %u internal low-water | lvgl %u of %u used, %u%% frag",
+                     (unsigned)esp_get_free_heap_size(),
+                     (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)ui_lvgl_used(), (unsigned)ui_lvgl_total(), (unsigned)ui_lvgl_frag());
+        }
+
+        // The holdings screen asks once when it opens and shows whatever comes back.
+        if (ui_state() == UI_PORTFOLIO) {
+            if (!pf_asked) {
+                pf_asked = true;
+                s_have_portfolio = false;
+                ui_portfolio_waiting();
+                if (!ws_send_text("{\"type\":\"ask\",\"kind\":\"portfolio\"}")) ESP_LOGW(TAG, "portfolio ask not delivered");
+            }
+            if (s_have_portfolio) { s_have_portfolio = false; ui_show_portfolio(&s_portfolio); }
+        } else {
+            pf_asked = false;
+        }
+
+        // The one thing the wearer starts. The screen sends an ask; whatever the agent comes
+        // back with arrives as an ordinary proposal and is checked like any other.
+        if (ui_state() == UI_SWAP) {
+            char from[8], to[8], amount[12], msg[160];
+            if (ui_take_swap(from, sizeof from, to, sizeof to, amount, sizeof amount)) {
+                snprintf(msg, sizeof msg,
+                         "{\"type\":\"ask\",\"kind\":\"swap\",\"from\":\"%s\",\"to\":\"%s\",\"amount\":\"%s\"}",
+                         from, to, amount);
+                if (ws_send_text(msg)) {
+                    ESP_LOGI(TAG, "asked the agent: %s", msg);
+                } else {
+                    ESP_LOGW(TAG, "ask not delivered: %s", msg);
+                    ui_swap_waiting("No link");
+                }
             }
         }
 
@@ -691,6 +770,14 @@ void app_main(void)
                 ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
                 if (ag && ag->has_face) ui_show_agent(ag);
                 else ui_show_proposal(&s_pending);
+                // Go and wake the Ledger now, while the wearer is still reading the face. By
+                // the time they have tapped through to the amount the link is usually up, and
+                // the hold arms itself the moment it answers.
+                if (!st.ledger && bonded && s_pending.tier >= 2) {
+                    bool led = ledger_link_ensure(8000, NULL);
+                    if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
+                    if (led) ledger_used_ms = (uint32_t)(esp_timer_get_time() / 1000);
+                }
             }
         }
 

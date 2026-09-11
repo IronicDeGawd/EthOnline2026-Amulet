@@ -126,6 +126,12 @@ export const AGENTS = {
     // What the model is told it is for. One agent, one job, one leash.
     mandate: "You are a cautious guardian. Your only concern is that this position never gets liquidated. You do not chase yield.",
   },
+  swap: {
+    label: "swap",
+    title: "Swap desk",
+    caps: { max_value_wei: 20_000_000_000_000_000n, targets: ["swapSim"] as const, selectors: ["exactInputSingle"] as const },
+    mandate: "You are a swap desk. You do not act on your own — you answer when your owner asks for a pair, find the best route, and propose it.",
+  },
   yield: {
     label: "yield",
     title: "Yield scout",

@@ -9,6 +9,9 @@ export interface Decision { type: "decision"; id: string; result: DecisionResult
 export interface Presence { type: "presence"; uptime?: number; worn?: boolean; policyVersion?: number; address?: string }
 export type BrainState = "watching" | "proposing" | "stale" | "offline";
 
+// The one message the wearer starts. Everything else on this socket is the brain talking.
+export interface Ask { type: "ask"; kind: "swap" | "portfolio"; from?: string; to?: string; amount?: string }
+
 export interface Pick { type: "pick"; id: string; idx: number }
 export interface Dismiss { type: "dismiss"; id: string }
 export type PickResult = { kind: "pick"; idx: number } | { kind: "dismiss" } | { kind: "expired" };
@@ -19,6 +22,7 @@ export interface PendantEvents {
   decision: [Decision];
   presence: [Presence];
   pick: [Pick | Dismiss];
+  ask: [Ask];
 }
 
 export class PendantLink extends EventEmitter<PendantEvents> {
@@ -95,5 +99,6 @@ export class PendantLink extends EventEmitter<PendantEvents> {
     if (m.type === "decision") this.emit("decision", m as Decision);
     else if (m.type === "presence") this.emit("presence", m as Presence);
     else if (m.type === "pick" || m.type === "dismiss") this.emit("pick", m as Pick | Dismiss);
+    else if (m.type === "ask") this.emit("ask", m as Ask);
   }
 }

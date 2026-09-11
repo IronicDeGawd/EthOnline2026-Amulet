@@ -23,7 +23,7 @@ import { makeStatusWriter, type StatusWriter } from "../ens/status.js";
 import { formatView, readMainnetView } from "../chain/account.js";
 import { accountBalance, accountNonce, makeRelayer, type Relayer } from "../chain/account712.js";
 import { runAttack, type AttackKind } from "../attack.js";
-import { MENU, runScenario, type DemoDeps } from "./demo.js";
+import { MENU, runScenario, swapAsk, type DemoDeps } from "./demo.js";
 import { fetchYieldTable, formatTable, YIELD_ASSET } from "../data/graph/yield.js";
 import { RESOLVER_ABI } from "../ens/abi.js";
 import { agentPolicy, policyRecords } from "../engine/policy.js";
@@ -39,6 +39,7 @@ import { makeNovaExplainer, templateExplainer } from "../engine/llm.js";
 import { makeNovaDecider } from "../engine/decide.js";
 import { fetchHistory } from "../data/graph/history.js";
 import { formatQuote, readEthUsd, syncSimPrice } from "../chain/oracle.js";
+import { portfolioMessage, readPortfolio } from "../chain/portfolio.js";
 import { PendantLink } from "../pendant/ws.js";
 import { Brain, type Simulation } from "../brain.js";
 
@@ -372,6 +373,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
     const d: DemoDeps = {
       sepolia, dep, policy: defaultPolicy(dep), pendant, relayer, ledger: LEDGER_ADDRESS,
       recorder: makeRecorder(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`, dep.amuletLog),
+      simPrice: async () => (await readPosition(sepolia, dep.simA, dep.amuletAccount ?? LEDGER_ADDRESS)).price,
       syncPrice: async () => {
         const q = await readEthUsd(sepolia);
         log(formatQuote(q));
@@ -424,6 +426,24 @@ program.command("demo").description("one key per scenario, with the pendant conn
       log,
     };
 
+    // The firmware's swap screen sends this; the w key fakes the same thing.
+    pendant.on("ask", (a) => {
+      if (a.kind === "portfolio") {
+        void readPortfolio(sepolia, dep)
+          .then((rows) => {
+            log(`portfolio: ${rows.map((r) => `${r.label} ${r.value}`).join(", ")}`);
+            pendant.send(portfolioMessage(rows));
+          })
+          .catch((e) => log(`portfolio read failed: ${(e as Error).message.split("\n")[0]}`));
+        return;
+      }
+      if (a.kind !== "swap") { log(`ignoring an ask I do not understand: ${a.kind}`); return; }
+      const from = a.from === "USDC" ? "USDC" : "ETH";
+      const to = a.to === "USDC" ? "USDC" : "ETH";
+      const amount = from === "ETH" ? 10_000_000_000_000_000n : 25_000_000n;
+      void swapAsk(d, from, to, amount).catch((e) => log(`swap failed: ${(e as Error).message.split("\n")[0]}`));
+    });
+
     console.log(MENU);
     process.stdin.setRawMode?.(true);
     process.stdin.resume();
@@ -434,7 +454,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
       if (k === "q" || raw === "\u0003") { pendant.close(); process.exit(0); }
       if (k === "m") { console.log(MENU); return; }
       if (busy) { log("still on that one — swipe or sign on the wrist first"); return; }
-      if (!k || !"1234567890dyoprs".includes(k)) return;
+      if (!k || !"1234567890dyoprsw".includes(k)) return;
       busy = true;
       runScenario(k, d).catch((e) => log(`failed: ${(e as Error).message.split("\n")[0]}`)).finally(() => { busy = false; });
     });
@@ -506,7 +526,7 @@ ens.command("setup").description("register the name, deploy resolver + subregist
     await showEns(sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL")));
   });
 ens.command("agent").description("give an agent its own name, its own limits and its own face")
-  .argument("[label]", "repay | yield | all", "all")
+  .argument("[label]", "repay | yield | swap | all", "all")
   .action(async (label: string) => {
     const s = await loadSecrets();
     const dep = loadDeployments();
@@ -591,6 +611,38 @@ async function showEns(client: ReturnType<typeof sepoliaClient>): Promise<void> 
 
 // Deploys a fresh AmuletLog from the sealed deployer key and records it in the deployments
 // file, keeping the previous address under amuletLogV1 so old history stays readable.
+// Redeploys the account that holds the position and executes signed intents, and points the
+// deployments file at it. The old one keeps whatever is in it; the Ledger can sweep it.
+program.command("deploy-account").description("deploy the account that executes signed intents")
+  .option("--fund <eth>", "send this much to it from the deployer once it is up")
+  .action(async (o) => {
+    const s = await loadSecrets();
+    const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
+    const artifact = JSON.parse(
+      readFileSync(resolve(REPO_ROOT, "contracts", "out", "AmuletAccount.sol", "AmuletAccount.json"), "utf8"),
+    ) as { bytecode: { object: `0x${string}` }; abi: unknown[] };
+    const signer = signerFromKey(rpc, deployerKey(s, log));
+    log(`deploying AmuletAccount owned by ${LEDGER_ADDRESS}`);
+    const hash = await signer.wallet.deployContract({
+      abi: artifact.abi as never, bytecode: artifact.bytecode.object, args: [LEDGER_ADDRESS],
+      account: signer.account, chain: sepoliaChain,
+    });
+    const r = await signer.pub.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
+    const address = r.contractAddress!;
+    log(`AmuletAccount at ${address} in block ${r.blockNumber}`);
+    const path = resolve(REPO_ROOT, "contracts", "deployments", `${SEPOLIA_CHAIN_ID}.json`);
+    const j = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    if (j.amuletAccount && j.amuletAccount !== address) j.amuletAccountV1 = j.amuletAccount;
+    j.amuletAccount = address;
+    writeFileSync(path, `${JSON.stringify(j, null, 2)}\n`);
+    log(`wrote ${path}`);
+    if (o.fund) {
+      const h2 = await signer.wallet.sendTransaction({ to: address, value: parseEther(o.fund), account: signer.account, chain: sepoliaChain });
+      await signer.pub.waitForTransactionReceipt({ hash: h2, timeout: RECEIPT_TIMEOUT_MS });
+      log(`funded with ${o.fund} ETH`);
+    }
+  });
+
 program.command("deploy-log").description("deploy the decision log contract and point the deployments file at it")
   .action(async () => {
     const s = await loadSecrets();

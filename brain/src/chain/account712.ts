@@ -19,7 +19,7 @@ export const ACCOUNT_ABI = parseAbi([
 // What the pendant needs to build the same message the contract will hash.
 export interface Intent {
   summary: string;
-  action: "Supply" | "Repay" | "Withdraw" | "Borrow";
+  action: "Supply" | "Repay" | "Withdraw" | "Borrow" | "Swap" | "Sell";
   market: `0x${string}`;
   amount: `0x${string}`; // hex, as the firmware parses it
   nonce: `0x${string}`;
@@ -39,6 +39,7 @@ export async function accountBalance(client: PublicClient, account: `0x${string}
 export function actionName(action: string): Intent["action"] | undefined {
   if (action === "REPAY_DEBT") return "Repay";
   if (action === "ADD_COLLATERAL" || action === "MOVE_SUPPLY") return "Supply";
+  if (action === "SWAP") return "Swap";
   return undefined;
 }
 

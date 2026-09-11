@@ -138,6 +138,31 @@ done:
     return ok;
 }
 
+bool portfolio_parse(const char *json, size_t len, amulet_portfolio_t *out, char *err, size_t err_cap)
+{
+    bool ok = false;
+    memset(out, 0, sizeof *out);
+    cJSON *root = cJSON_ParseWithLength(json, len);
+    if (!root) FAIL("not JSON");
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(root, "type");
+    if (!cJSON_IsString(type) || strcmp(type->valuestring, "portfolio") != 0) FAIL("not a portfolio");
+    const cJSON *rows = cJSON_GetObjectItemCaseSensitive(root, "rows");
+    if (!cJSON_IsArray(rows)) FAIL("no rows");
+    const cJSON *it;
+    cJSON_ArrayForEach(it, rows) {
+        if (out->n == PORTFOLIO_MAX) break;
+        if (!str_field(it, "label", out->rows[out->n].label, sizeof out->rows[out->n].label)) continue;
+        str_field(it, "value", out->rows[out->n].value, sizeof out->rows[out->n].value);
+        str_field(it, "sub", out->rows[out->n].sub, sizeof out->rows[out->n].sub);
+        out->n++;
+    }
+    if (out->n == 0) FAIL("nothing to show");
+    ok = true;
+done:
+    if (root) cJSON_Delete(root);
+    return ok;
+}
+
 bool options_parse(const char *json, size_t len, amulet_options_t *out, char *err, size_t err_cap)
 {
     bool ok = false;
