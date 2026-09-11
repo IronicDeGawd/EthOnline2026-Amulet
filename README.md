@@ -205,7 +205,24 @@ brain/       Node/TypeScript agent — Graph data, rules, proposal builder, WSS 
 contracts/   Foundry — AmuletLog.sol (+ optional PositionSim.sol), Sepolia
 subgraph/    Subgraph Studio manifest indexing the Sepolia contracts
 docs/        Ledger developer-experience feedback and design notes
+web/         The site: build.py draws the pendant, app/ is the React front end
 ```
+
+### The site
+
+```bash
+cd web && python3 build.py                 # redraw the pendant; writes app/src/generated/
+pnpm --dir brain amulet web-data \
+  --out ../web/app/src/generated/chain.json   # caps and status, read from ENS at a block
+cd web/app && npm install && npm run dev   # the landing page and /proof
+npm run build                              # static files in web/app/dist
+```
+
+The landing page is one drawing: the pendant on the hero turns, travels and opens into the
+exploded view as you scroll, all of it computed from `build.py`'s own geometry. `/proof` reads
+the decision log from our subgraph in the browser. The two things the subgraph cannot hold —
+each agent's cap, and `amulet.status` — are ENS text records, so they are read once at build
+time into `chain.json` rather than putting an RPC endpoint in the page.
 
 ## Hardware
 

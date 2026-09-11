@@ -1,0 +1,109 @@
+/* Sections 3 to 5, transcribed from the locked artboards in context/design/web-next/. */
+
+.sec { border-top: 1px solid var(--rule); }
+.sec .shell { padding-top: 88px; padding-bottom: 96px; }
+.sec h2 { margin: 0 0 16px; font-size: clamp(30px, 3.1vw, 44px); line-height: 1.06; font-weight: 700; letter-spacing: -0.03em; }
+.sec .lede { margin: 0; max-width: 68ch; font-size: 19px; color: var(--ink-2); }
+
+/* ---------- the path diagrams ---------- */
+.node { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 76px; flex: none; }
+.node .box { position: relative; width: 56px; height: 56px; display: grid; place-items: center; border: 1px solid var(--ink); color: var(--ink); }
+.node.dark .box { background: var(--ink); color: var(--ground); }
+.node .keyflag { position: absolute; right: -6px; top: -6px; width: 18px; height: 18px; background: var(--gold); color: var(--ink); display: grid; place-items: center; }
+.node span { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+
+.hop { position: relative; height: 1px; background: var(--ink-2); flex: 1 1 24px; min-width: 22px; margin-top: 28px; }
+.hop .head { position: absolute; right: -1px; top: -3.5px; border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent; border-left: 6px solid var(--ink-2); }
+.hop .brk { position: absolute; left: 50%; top: 50%; width: 11px; height: 11px; transform: translate(-50%, -50%) rotate(45deg); border: 1.5px solid var(--break); background: var(--ground); }
+.hop .gate { position: absolute; left: 50%; top: 50%; width: 9px; height: 24px; transform: translate(-50%, -50%); border-left: 1.6px solid var(--gold); border-right: 1.6px solid var(--gold); }
+.path { display: flex; align-items: flex-start; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: center; margin-top: 40px; padding-bottom: 14px;
+          font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: var(--ink-2); }
+.legend span.item { display: flex; align-items: center; gap: 10px; }
+.legend i.brk  { width: 10px; height: 10px; transform: rotate(45deg); border: 1.5px solid var(--break); }
+.legend i.gate { width: 8px; height: 18px; border-left: 1.6px solid var(--gold); border-right: 1.6px solid var(--gold); }
+.legend i.keyf { width: 14px; height: 14px; background: var(--gold); display: grid; place-items: center; color: var(--ink); }
+
+.scens { border-bottom: 1px solid var(--rule); }
+.scen { display: flex; flex-direction: column; gap: 22px; padding: 34px 0 38px; border-top: 1px solid var(--rule); }
+.scen h3 { margin: 0; font-size: clamp(20px, 1.8vw, 24px); font-weight: 600; letter-spacing: -0.015em; }
+.scen .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; }
+.scen .side { display: flex; flex-direction: column; gap: 18px; }
+.scen p { margin: 0; font-size: 16px; color: var(--ink-2); max-width: 52ch; }
+.scen p b { display: block; margin-bottom: 4px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; font-weight: 500; }
+.scen .usual b { color: var(--break); }
+.scen .with b  { color: var(--gold); }
+
+/* ---------- how it talks ---------- */
+.talks { background: var(--paper); }
+.lanes-head { margin-top: 48px; display: flex; }
+.lane-card { flex: none; min-width: 0; box-sizing: border-box; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--ink);
+             font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; }
+.lane-card.dark { background: var(--ink); color: var(--ground); }
+.lane-card .who { display: flex; flex-direction: column; min-width: 0; }
+.lane-card .who b { font-size: 14px; font-weight: 400; }
+.lane-card .who em { font-style: normal; font-size: 11px; color: var(--ink-2); }
+.lane-card.dark .who em { color: #9aa7b8; }
+
+.seq { position: relative; margin-top: 12px; }
+.seq .lane { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--rule); }
+.seq .msg { position: absolute; height: 1px; background: var(--ink-2); }
+.seq .msg i { position: absolute; top: -4px; border-top: 4px solid transparent; border-bottom: 4px solid transparent; }
+.seq .msg i.r { right: -1px; border-left: 7px solid var(--ink-2); }
+.seq .msg i.l { left: -1px; border-right: 7px solid var(--ink-2); }
+.seq .self { position: absolute; width: 80px; height: 26px; border: 1px solid var(--gold); border-top: none; }
+.seq .tag { position: absolute; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: var(--ink);
+            background: var(--paper); padding: 0 4px; white-space: nowrap; }
+.seq .note { position: absolute; font-size: 14px; color: var(--ink-2); line-height: 1.5; }
+.seq .note b { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 500; color: var(--ink); }
+
+.neverlist { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 16px 40px; padding-top: 18px; border-top: 1px solid var(--rule);
+             font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: var(--ink-2); }
+.neverlist b { color: var(--gold); font-weight: 500; }
+
+/* the phone layout: the lanes do not survive a narrow screen, so the same eight
+   messages become a numbered list instead of a sideways scroll */
+.seq-list { display: none; margin: 32px 0 0; padding: 0; list-style: none; }
+.seq-list li { display: grid; grid-template-columns: 28px 1fr; gap: 0 12px; padding: 16px 0; border-top: 1px solid var(--rule); }
+.seq-list .n { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: var(--ink-2); }
+.seq-list .what { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 14px; }
+.seq-list .who { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.seq-list .desc { margin: 8px 0 0; font-size: 15px; color: var(--ink-2); }
+
+/* ---------- built with ---------- */
+.tiles { margin-top: 40px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 40px; }
+.tile { display: flex; flex-direction: column; gap: 10px; padding: 26px 0 30px; border-top: 1px solid var(--rule); }
+.tile .name { display: flex; align-items: baseline; gap: 12px; }
+.tile h3 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.015em; }
+.tile .chip { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-2); border: 1px solid var(--rule); padding: 1px 7px; }
+.tile .chip.track { color: var(--gold); border-color: var(--gold); }
+.tile p { margin: 0; font-size: 16px; color: var(--ink-2); }
+.tile a { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; text-decoration: underline; text-decoration-color: var(--rule); }
+.tile a:hover { color: var(--gold); }
+
+footer.site { padding: 28px 40px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 10px 32px;
+              justify-content: space-between; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; color: var(--ink-2); }
+
+/* The lanes need 1170 px of content width. Narrower than that and the same eight
+   messages become a numbered list rather than a sideways scroll. */
+@media (max-width: 1259px) {
+  .lanes-head, .seq { display: none; }
+  .seq-list { display: block; }
+}
+@media (max-width: 1000px) {
+  .sec .shell { padding-top: 56px; padding-bottom: 64px; }
+  .scen .two { grid-template-columns: 1fr; gap: 32px; }
+  .tiles { grid-template-columns: 1fr; gap: 0; }
+  footer.site { padding: 24px; }
+}
+/* On a phone five boxes and four arrows must fit 342 px of content, so the nodes
+   shrink and their labels are allowed to wrap instead of running off the edge. */
+@media (max-width: 560px) {
+  .node { width: 54px; }
+  .node .box { width: 42px; height: 42px; }
+  .node .box > svg { width: 30px; height: 30px; }
+  .node span { font-size: 10px; white-space: normal; text-align: center; line-height: 1.3; }
+  .hop { min-width: 12px; }
+  .legend { gap: 12px 20px; }
+}
