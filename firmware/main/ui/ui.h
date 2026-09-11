@@ -61,8 +61,14 @@ bool ui_take_pick(int *idx);                       // true once per tapped row
 void ui_show_portfolio(const amulet_portfolio_t *p);
 void ui_portfolio_waiting(void);   // opened before the answer arrived
 
+// LVGL keeps its own pool, sized at build time and claimed whole at boot. These report what is
+// actually being used, so the pool can be sized from evidence rather than from the default.
+uint32_t ui_lvgl_used(void);
+uint32_t ui_lvgl_total(void);
+uint32_t ui_lvgl_frag(void);
+
 void ui_show_swap(void);
-bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap);  // true once per Go
+bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap, char *amount, size_t amount_cap);
 void ui_swap_waiting(const char *note);            // "Asking the agent...", or a refusal
 
 void ui_show_picked(const char *venue);            // "Picked · Spark WETH", the agent is building the proposal             // after a swipe: "Declined" / "Dismissed"

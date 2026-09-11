@@ -27,14 +27,15 @@ static ui_status_t s_status;
 static lv_obj_t *s_scr[UI_PORTFOLIO + 1];
 
 // SWAP: the wearer's own request. Two pills cycle the pair, a third sends it to the agent.
-static lv_obj_t *s_sw_title, *s_sw_row[2], *s_sw_side[2], *s_sw_tok[2], *s_sw_go, *s_sw_golbl, *s_sw_note, *s_sw_arc;
+static lv_obj_t *s_sw_title, *s_sw_row[3], *s_sw_side[3], *s_sw_tok[3], *s_sw_go, *s_sw_golbl, *s_sw_arc;
 static int s_sw_sel[2] = { 0, 1 };   // index into SW_TOKENS: from, to
+static int s_sw_amt;                  // index into the amount list for the side being sold
 static bool s_sw_ask;                 // Go was tapped; the main loop takes it
 
 // PORTFOLIO: what the account holds. A scrolling list, because four holdings do not fit on a
 // 32 mm disc and pretending otherwise would just hide one.
 static lv_obj_t *s_pf_title, *s_pf_list, *s_pf_row[PORTFOLIO_MAX], *s_pf_label[PORTFOLIO_MAX];
-static lv_obj_t *s_pf_value[PORTFOLIO_MAX], *s_pf_sub[PORTFOLIO_MAX], *s_pf_empty;
+static lv_obj_t *s_pf_value[PORTFOLIO_MAX], *s_pf_sub[PORTFOLIO_MAX], *s_pf_empty, *s_pf_hint;
 
 // OPTIONS (yield card)
 static lv_obj_t *s_o_title, *s_o_row[3], *s_o_name[3], *s_o_rate[3], *s_o_footer, *s_o_arc;
@@ -639,7 +640,10 @@ static void swipe(lv_event_t *e)
     if (s_state == UI_SWAP  && dir == LV_DIR_BOTTOM) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
     // Down from HOME for the holdings; only a sideways swipe leaves, so scrolling stays safe.
     if (s_state == UI_HOME  && dir == LV_DIR_BOTTOM) load_dir(UI_PORTFOLIO, LV_SCR_LOAD_ANIM_MOVE_BOTTOM);
+    // Sideways always leaves; up leaves too, which only reaches here when the list is not
+    // scrolling and therefore is not consuming the drag.
     if (s_state == UI_PORTFOLIO && (dir == LV_DIR_RIGHT || dir == LV_DIR_LEFT)) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_RIGHT);
+    if (s_state == UI_PORTFOLIO && dir == LV_DIR_TOP) load_dir(UI_HOME, LV_SCR_LOAD_ANIM_MOVE_TOP);
 }
 
 static void build_photo(void)
@@ -701,47 +705,59 @@ static void build_options(void)
 // what comes back is a proposal and goes through the same policy check as any other.
 static const char *SW_TOKENS[] = { "ETH", "USDC" };
 #define SW_NTOK 2
-#define SW_ROW0_Y 66
-#define SW_ROW_H  42
-#define SW_GO_Y   158
-#define SW_GO_H   38
+// How much, offered as a few sensible sizes rather than a keyboard nobody wants on a 32 mm
+// disc. The list shown depends on what is being sold.
+static const char *SW_AMT_ETH[]  = { "0.005", "0.01", "0.02" };
+static const char *SW_AMT_USDC[] = { "10", "25", "50" };
+#define SW_NAMT 3
+#define SW_ROW0_Y 60
+#define SW_ROW_H  38
+#define SW_GO_Y   178
+#define SW_GO_H   34
 
 static void swap_view(bool on) { (void)on; }
+
+static const char *swap_amount(void)
+{
+    return s_sw_sel[0] == 0 ? SW_AMT_ETH[s_sw_amt] : SW_AMT_USDC[s_sw_amt];
+}
 
 static void swap_paint(void)
 {
     for (int i = 0; i < 2; i++) lv_label_set_text(s_sw_tok[i], SW_TOKENS[s_sw_sel[i]]);
+    lv_label_set_text_fmt(s_sw_tok[2], "%s %s", swap_amount(), SW_TOKENS[s_sw_sel[0]]);
+    lv_label_set_text(s_sw_golbl, "Find a route");
 }
 
 static void swap_tap(const lv_point_t *at)
 {
-    if (at->y >= SW_GO_Y && at->y < SW_GO_Y + SW_GO_H + 8) {
+    if (at->y >= SW_GO_Y && at->y < SW_GO_Y + SW_GO_H + 10) {
         if (s_sw_sel[0] == s_sw_sel[1]) {   // nothing to swap; say so rather than ask
-            lv_label_set_text(s_sw_note, "pick two different");
+            lv_label_set_text(s_sw_golbl, "Pick two");
             return;
         }
         s_sw_ask = true;
-        lv_label_set_text(s_sw_note, "Asking the agent...");
-        ESP_LOGI(TAG, "swap asked: %s -> %s", SW_TOKENS[s_sw_sel[0]], SW_TOKENS[s_sw_sel[1]]);
+        lv_label_set_text(s_sw_golbl, "Asking...");
+        ESP_LOGI(TAG, "swap asked: %s %s -> %s", swap_amount(), SW_TOKENS[s_sw_sel[0]], SW_TOKENS[s_sw_sel[1]]);
         return;
     }
     int i = (at->y - SW_ROW0_Y) / SW_ROW_H;
-    if (at->y < SW_ROW0_Y || i < 0 || i > 1) return;
-    s_sw_sel[i] = (s_sw_sel[i] + 1) % SW_NTOK;
+    if (at->y < SW_ROW0_Y || i < 0 || i > 2) return;
+    if (i == 2) s_sw_amt = (s_sw_amt + 1) % SW_NAMT;   // the third pill is how much
+    else s_sw_sel[i] = (s_sw_sel[i] + 1) % SW_NTOK;
     swap_paint();
-    lv_label_set_text(s_sw_note, "swipe down for home");
 }
 
 static void build_swap(void)
 {
     lv_obj_t *s = s_scr[UI_SWAP] = screen(&bg_base, NULL);
-    s_sw_title = text(s, &manrope_700_15, C_TEXT, 36, "Swap");
-    static const char *SIDE[2] = { "From", "To" };
-    for (int i = 0; i < 2; i++) {
+    s_sw_title = text(s, &manrope_700_15, C_TEXT, 30, "Swap");
+    static const char *SIDE[3] = { "From", "To", "Amount" };
+    for (int i = 0; i < 3; i++) {
         int y = SW_ROW0_Y + i * SW_ROW_H;
         s_sw_row[i] = lv_obj_create(s);
         lv_obj_remove_style_all(s_sw_row[i]);
-        lv_obj_set_size(s_sw_row[i], 176, 36);
+        lv_obj_set_size(s_sw_row[i], 176, 34);
         lv_obj_set_pos(s_sw_row[i], 32, y);
         lv_obj_set_style_radius(s_sw_row[i], 12, LV_PART_MAIN);
         lv_obj_set_style_bg_color(s_sw_row[i], lv_color_white(), LV_PART_MAIN);
@@ -766,9 +782,7 @@ static void build_swap(void)
     s_sw_golbl = lv_label_create(s_sw_go);
     lv_obj_set_style_text_font(s_sw_golbl, &manrope_700_15, LV_PART_MAIN);
     lv_obj_set_style_text_color(s_sw_golbl, lv_color_hex(C_TEXT), LV_PART_MAIN);
-    lv_label_set_text(s_sw_golbl, "Find a route");
     lv_obj_center(s_sw_golbl);
-    s_sw_note = text(s, &manrope_500_11, C_MUTED, 200, "swipe down for home");
     s_sw_arc = rim_arc(s);
     s_hold_swap = (hold_t){ .arc = s_sw_arc, .view = swap_view, .armed = never_armed, .on_tap = swap_tap };
     touch_layer(s, &s_hold_swap);
@@ -781,7 +795,6 @@ void ui_show_swap(void)
     s_sw_ask = false;
     if (!display_ready() || !s_sw_title || !lvgl_port_lock(0)) { s_state = UI_SWAP; return; }
     swap_paint();
-    lv_label_set_text(s_sw_note, "swipe down for home");
     s_press_counts = s_hold_done = s_hold_view = false;
     s_shown_at = lv_tick_get();
     s_confirm = s_reject = false;
@@ -791,12 +804,13 @@ void ui_show_swap(void)
     lvgl_port_unlock();
 }
 
-bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap)
+bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap, char *amount, size_t amount_cap)
 {
     if (!s_sw_ask) return false;
     s_sw_ask = false;
     snprintf(from, from_cap, "%s", SW_TOKENS[s_sw_sel[0]]);
     snprintf(to, to_cap, "%s", SW_TOKENS[s_sw_sel[1]]);
+    snprintf(amount, amount_cap, "%s", swap_amount());
     return true;
 }
 
@@ -804,8 +818,8 @@ bool ui_take_swap(char *from, size_t from_cap, char *to, size_t to_cap)
 // wearer stays where they started.
 void ui_swap_waiting(const char *note)
 {
-    if (!display_ready() || !s_sw_note || !lvgl_port_lock(0)) return;
-    lv_label_set_text(s_sw_note, note && note[0] ? note : "");
+    if (!display_ready() || !s_sw_golbl || !lvgl_port_lock(0)) return;
+    lv_label_set_text(s_sw_golbl, note && note[0] ? note : "Find a route");
     lvgl_port_unlock();
 }
 
@@ -822,9 +836,11 @@ static void build_portfolio(void)
     lv_obj_set_pos(s_pf_list, 20, 62);
     lv_obj_set_style_pad_row(s_pf_list, 6, LV_PART_MAIN);
     lv_obj_set_flex_flow(s_pf_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(s_pf_list, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_scroll_dir(s_pf_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(s_pf_list, LV_SCROLLBAR_MODE_AUTO);
-    lv_obj_add_flag(s_pf_list, LV_OBJ_FLAG_SCROLLABLE);
+    // Scrollable is decided per visit, in ui_show_portfolio: a list that fits needs no scroll,
+    // and while it is not scrolling a vertical swipe can mean "go back" instead.
     for (int i = 0; i < PORTFOLIO_MAX; i++) {
         s_pf_row[i] = lv_obj_create(s_pf_list);
         lv_obj_remove_style_all(s_pf_row[i]);
@@ -851,6 +867,8 @@ static void build_portfolio(void)
         lv_obj_align(s_pf_value[i], LV_ALIGN_RIGHT_MID, -12, 0);
     }
     s_pf_empty = text(s, &manrope_500_13, C_MUTED, 112, "asking the agent...");
+    // Up and down scroll the list, so they cannot also mean "leave". Say which way does.
+    s_pf_hint = text(s, &manrope_500_11, C_MUTED, 202, "swipe sideways for home");
     lv_obj_add_event_cb(s, swipe, LV_EVENT_GESTURE, NULL);
 }
 
@@ -880,6 +898,14 @@ void ui_show_portfolio(const amulet_portfolio_t *p)
     }
     show(s_pf_empty, p->n == 0);
     lv_obj_scroll_to_y(s_pf_list, 0, LV_ANIM_OFF);
+    // Three rows fill the 132 px window exactly. Fewer than that and there is nothing to
+    // scroll, so the list stops swallowing vertical drags and a swipe up simply goes home —
+    // the mirror of the swipe down that got you here. Only a list that really scrolls needs
+    // the sideways exit, and only then is the hint worth the space.
+    bool scrolls = p->n > 3;
+    if (scrolls) lv_obj_add_flag(s_pf_list, LV_OBJ_FLAG_SCROLLABLE);
+    else lv_obj_remove_flag(s_pf_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_label_set_text(s_pf_hint, scrolls ? "swipe sideways for home" : "swipe up for home");
     display_backlight(100);
     lv_screen_load(s_scr[UI_PORTFOLIO]);
     s_state = UI_PORTFOLIO;
@@ -929,6 +955,20 @@ bool ui_take_pick(int *idx)
     return true;
 }
 
+// What LVGL is really using out of its fixed pool. Read under the port lock like everything
+// else that touches LVGL state.
+static void lvgl_mem(lv_mem_monitor_t *m)
+{
+    memset(m, 0, sizeof *m);
+    if (!display_ready() || !lvgl_port_lock(0)) return;
+    lv_mem_monitor(m);
+    lvgl_port_unlock();
+}
+
+uint32_t ui_lvgl_used(void)  { lv_mem_monitor_t m; lvgl_mem(&m); return (uint32_t)(m.total_size - m.free_size); }
+uint32_t ui_lvgl_total(void) { lv_mem_monitor_t m; lvgl_mem(&m); return (uint32_t)m.total_size; }
+uint32_t ui_lvgl_frag(void)  { lv_mem_monitor_t m; lvgl_mem(&m); return (uint32_t)m.frag_pct; }
+
 void ui_init(void)
 {
     if (!display_ready()) { ESP_LOGW(TAG, "no panel - UI disabled, signing runs headless"); return; }
@@ -961,8 +1001,10 @@ void ui_set_status(const ui_status_t *s)
     if (!lvgl_port_lock(0)) return;
     // The pendant is its own thing; the Ledger is one line of status, never the headline.
     const char *l1 = s->wifi ? "Watching" : "Offline";
+    // A bonded Ledger that is simply not connected is not a problem any more: the link is
+    // built when there is something to sign. Only the absence of a bond is worth saying.
     const char *l2 = !s->wifi   ? "No wifi" :
-                     !s->ledger ? (s_l_state == UI_PAIR_PAIRED ? "Ledger away" : "Ledger not paired") :
+                     s_l_state != UI_PAIR_PAIRED ? "Ledger not paired" :
                      s->policy_stale ? "Policy not refreshed" :
                      !s->brain  ? "Waiting for the agent" : "Ready for proposals";
     lv_label_set_text(s_home_line1, l1);
