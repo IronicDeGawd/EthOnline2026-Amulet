@@ -1,0 +1,61 @@
+"One decision the wearer made, as the pendant reported it."
+type Action @entity(immutable: true) {
+  id: Bytes!
+  "The ENS label the request claimed. Empty when it claimed none."
+  agentLabel: String!
+  agent: Agent!
+  proposalId: Bytes!
+  "The key that wrote the record — the brain's status hot key, never the Ledger."
+  sender: Bytes!
+  target: Bytes!
+  "The contract function the request wanted to call."
+  selector: Bytes!
+  value: BigInt!
+  tier: Int!
+  "approved, rejected, policy_reject or expired."
+  outcome: String!
+  approved: Boolean!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+"Everything one named agent has ever asked for, and what the wrist decided."
+type Agent @entity(immutable: false) {
+  "The ENS label, or the empty string for requests that named no agent."
+  id: String!
+  label: String!
+  requests: Int!
+  approved: Int!
+  rejected: Int!
+  refusedByPolicy: Int!
+  expired: Int!
+  "Total value across approved requests only."
+  valueApproved: BigInt!
+  "Total value it asked for, whatever the answer."
+  valueRequested: BigInt!
+  firstSeen: BigInt!
+  lastSeen: BigInt!
+  actions: [Action!]! @derivedFrom(field: "agent")
+}
+
+"Per-contract view: what gets asked of each market, and how often it is refused."
+type Target @entity(immutable: false) {
+  id: Bytes!
+  requests: Int!
+  approved: Int!
+  refused: Int!
+  valueApproved: BigInt!
+  lastSeen: BigInt!
+}
+
+"One row per day, so the history is plottable without walking every event."
+type DailyStat @entity(immutable: false) {
+  "Days since the epoch."
+  id: String!
+  day: Int!
+  requests: Int!
+  approved: Int!
+  refused: Int!
+  valueApproved: BigInt!
+}
