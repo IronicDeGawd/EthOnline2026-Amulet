@@ -241,9 +241,10 @@ program.command("decide").description("ask the model what it would propose right
     log(hist ? `memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused` : "memory: nothing indexed yet");
     const q = await readEthUsd(sepolia).catch(() => undefined);
     if (q) log(formatQuote(q));
+    const spendable = dep.amuletAccount ? await sepolia.getBalance({ address: dep.amuletAccount }) : undefined;
     const j = await makeNovaDecider(s.AWS_REGION || "us-east-1").decide(
       pos, market, policy, AGENTS[agent].mandate, undefined, hist, undefined,
-      q ? `Chainlink ${q.description}, updated ${Math.round(q.ageS / 60)} minutes ago` : undefined,
+      q ? `Chainlink ${q.description}, updated ${Math.round(q.ageS / 60)} minutes ago` : undefined, spendable,
     );
     log(`it said: ${JSON.stringify(j.decision ?? null)}`);
     log(`verdict: ${j.reason}`);

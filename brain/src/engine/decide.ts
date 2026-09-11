@@ -46,7 +46,7 @@ function fmtUsd(units: bigint): string {
 // What the model is allowed to know: its position, the market, its own leash. The caps are
 // in the brief on purpose — an agent that cannot see its limits cannot respect them, and we
 // want to be able to say the refusals happen despite the model having been told.
-export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string, priceNote?: string): { system: string; user: string } {
+export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string, priceNote?: string, spendable?: bigint): { system: string; user: string } {
   const hf = Number.isFinite(p.healthFactor) ? p.healthFactor.toFixed(3) : "none (no debt)";
   const rows = market.yield ?? [];
   const yields = rows
@@ -92,6 +92,9 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
       (p.debtUnits === 0n
         ? "this position has no debt, so REPAY_DEBT is not available; MOVE_SUPPLY and ADD_COLLATERAL do not need debt\n"
         : "") +
+      // What it can actually pay with. An agent proposing more than the account holds wastes
+      // the wearer's attention on something that would revert before it reached the chain.
+      (spendable !== undefined ? `you have ${formatEther(spendable)} ETH to spend; asking for more than that fails\n` : "") +
       `your limits (the wearer's device enforces these; exceeding one gets you refused):\n` +
       `  most you may send in one action: ${formatEther(policy.max_value_wei)} ETH\n` +
       `  markets you may touch: ${p.name}\n` +
@@ -132,7 +135,7 @@ export function parseDecision(text: string): Decision | undefined {
 
 // Turns a decision into a candidate, or says why it cannot. The facts are recomputed here,
 // never copied from the model: the number the wearer reads is the number that executes.
-export function validate(d: Decision, p: Position, market: MarketContext, policy: Policy): { candidate?: Candidate; reason: string } {
+export function validate(d: Decision, p: Position, market: MarketContext, policy: Policy, spendable?: bigint): { candidate?: Candidate; reason: string } {
   if (!d.act) return { reason: `stood down: ${d.why ?? "no reason given"}` };
   if (!d.action || !ACTIONS.has(d.action)) return { reason: `unknown action ${d.action ?? "(none)"}` };
 
@@ -170,6 +173,10 @@ export function validate(d: Decision, p: Position, market: MarketContext, policy
   if (wei <= 0n) return { reason: "amount is zero" };
   if (wei > policy.max_value_wei) {
     return { reason: `${fmtEth(wei)} is over its own cap of ${fmtEth(policy.max_value_wei)}` };
+  }
+  // Being told the balance is not the same as respecting it, so it is checked here too.
+  if (spendable !== undefined && wei > spendable) {
+    return { reason: `${fmtEth(wei)} is more than the ${fmtEth(spendable)} the account holds` };
   }
 
   const hf = Number.isFinite(p.healthFactor) ? p.healthFactor.toFixed(2) : "0";
@@ -229,7 +236,7 @@ export function validate(d: Decision, p: Position, market: MarketContext, policy
 }
 
 export interface Decider {
-  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string, priceNote?: string): Promise<Judgement>;
+  decide(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence, hist?: AgentHistory, lastRefusal?: string, priceNote?: string, spendable?: bigint): Promise<Judgement>;
 }
 
 // Reasons worth a second attempt: the model wanted something reasonable and got the shape or
@@ -241,8 +248,8 @@ export function correctable(reason: string): boolean {
 export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Decider {
   const client = new BedrockRuntimeClient({ region });
   return {
-    async decide(p, market, policy, mandate, ev, hist, lastRefusal, priceNote) {
-      const { system, user } = brief(p, market, policy, mandate, ev, hist, lastRefusal, priceNote);
+    async decide(p, market, policy, mandate, ev, hist, lastRefusal, priceNote, spendable) {
+      const { system, user } = brief(p, market, policy, mandate, ev, hist, lastRefusal, priceNote, spendable);
       const ask = async (messages: { role: "user" | "assistant"; content: { text: string }[] }[]) => {
         const res = await client.send(
           new ConverseCommand({
@@ -262,7 +269,7 @@ export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Dec
         const text = await ask(messages);
         const d = parseDecision(text);
         if (!d) return { reason: `unreadable answer: ${text.replace(/\s+/g, " ").slice(0, 140)}`, source: "rules" };
-        const v = validate(d, p, market, policy);
+        const v = validate(d, p, market, policy, spendable);
         if (v.candidate || !correctable(v.reason)) {
           return { candidate: v.candidate, decision: d, reason: v.reason, source: v.candidate ? "nova" : "rules", attempts: 1 };
         }
@@ -284,7 +291,7 @@ export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Dec
         if (!d2) {
           return { decision: d, reason: `${v.reason}; its second answer was unreadable`, source: "rules", attempts: 2, firstTry: v.reason };
         }
-        const v2 = validate(d2, p, market, policy);
+        const v2 = validate(d2, p, market, policy, spendable);
         return {
           candidate: v2.candidate,
           decision: d2,

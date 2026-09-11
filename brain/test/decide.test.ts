@@ -214,3 +214,23 @@ describe("the rest of the checks", () => {
     expect(v.reason).toContain("no yield table");
   });
 });
+
+describe("what the account can actually pay", () => {
+  it("refuses more than the account holds, even inside the cap", () => {
+    // cap is 0.01, the ask is 0.008 — fine by the policy, but the account has 0.002
+    const v = validate({ act: true, action: "ADD_COLLATERAL", amountEth: "0.008" }, position(), market, policy, 2_000_000_000_000_000n);
+    expect(v.candidate).toBeUndefined();
+    expect(v.reason).toContain("more than the");
+  });
+
+  it("allows it when the balance covers it", () => {
+    const v = validate({ act: true, action: "ADD_COLLATERAL", amountEth: "0.008" }, position(), market, policy, 20_000_000_000_000_000n);
+    expect(v.candidate?.action).toBe("ADD_COLLATERAL");
+  });
+
+  it("tells the model the figure", async () => {
+    const { brief } = await import("../src/engine/decide.js");
+    const { user } = brief(position(), market, policy, "guardian", undefined, undefined, undefined, undefined, 16_000_000_000_000_000n);
+    expect(user).toContain("0.016 ETH to spend");
+  });
+});
