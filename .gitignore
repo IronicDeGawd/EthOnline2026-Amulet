@@ -31,3 +31,8 @@ contracts/broadcast/
 contracts/deployments/31337.json
 tools/propose/.venv/
 tools/propose/__pycache__/
+
+# subgraph build output
+subgraph/generated/
+subgraph/build/
+subgraph/node_modules/

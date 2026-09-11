@@ -5,6 +5,8 @@ import { ulid } from "ulid";
 import { AGENTS, agentName, type AgentKey, type Deployments, type Policy } from "../config.js";
 import { PendantLink } from "../pendant/ws.js";
 import { accountNonce, makeRelayer, type Relayer } from "../chain/account712.js";
+import { proposalIdBytes32 } from "../engine/proposal.js";
+import type { Recorder } from "../chain/amuletlog.js";
 import { assembleOptions, pickCandidate } from "../engine/options.js";
 import { readRecords } from "../ens/resolver.js";
 import type { Candidate } from "../engine/rules.js";
@@ -16,6 +18,7 @@ export interface DemoDeps {
   policy: Policy;
   pendant: PendantLink;
   relayer: Relayer;
+  recorder?: Recorder;
   ledger: `0x${string}`;
   setPrice: (p: bigint) => Promise<void>;
   setRecord: (name: string, key: string, value: string) => Promise<void>;
@@ -31,6 +34,21 @@ function wrist(d: DemoDeps): void {
 }
 const sim = (d: Deployments, s: string) => (s === "simB" ? d.simB : d.simA);
 const simName = (s: string) => (s === "simB" ? "Sim-B" : "Sim-A");
+
+// Every scenario lands in the on-chain log, refusals included — that history is what the
+// subgraph indexes, so what you demo is what a judge can query afterwards.
+async function note(d: DemoDeps, id: string, agent: string, market: `0x${string}`, amount: bigint, outcome: string): Promise<void> {
+  if (!d.recorder) return;
+  try {
+    const h = await d.recorder.record({
+      proposalId: proposalIdBytes32(id), agent, target: market, value: amount,
+      selector: d.dep.selectors.supply, tier: 2, outcome: outcome as never,
+    });
+    d.log(`  logged on chain: ${h}`);
+  } catch (e) {
+    d.log(`  could not log it: ${(e as Error).message.split("\n")[0]}`);
+  }
+}
 
 // A request the wrist should accept: the agent's own market, its own call, inside its cap.
 // Signed as typed data, so the Ledger shows the sentence rather than bytes.
@@ -56,6 +74,7 @@ async function goodRequest(d: DemoDeps, agent: AgentKey, eth: string, which: str
   });
   const decision = await d.pendant.awaitDecision(id, 300_000);
   d.log(`  the wrist said: ${decision.result}`);
+  await note(d, id, AGENTS[agent].label, market, amount, decision.result);
   if (decision.result === "approved" && decision.signature) {
     const hash = await d.relayer.relay(intent as never, decision.signature);
     const r = await d.sepolia.waitForTransactionReceipt({ hash });
@@ -80,6 +99,7 @@ async function badRequest(d: DemoDeps, agent: string, eth: string, which: string
   });
   const decision = await d.pendant.awaitDecision(id, 120_000);
   d.log(`  the wrist said: ${decision.result}`);
+  await note(d, id, agent, market, amount, decision.result);
 }
 
 // The yield card: three venues, tap one, and the pick becomes a normal request to sign.

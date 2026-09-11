@@ -16,6 +16,6 @@ contract SelectorsTest is Test {
         assertEq(PositionSim.repay.selector, bytes4(0x402d8883), "repay()");
         assertEq(PositionSim.setPrice.selector, bytes4(0x91b7f5ed), "setPrice(uint256)");
         assertEq(SwapSim.exactInputSingle.selector, bytes4(0x414bf389), "exactInputSingle(...)");
-        assertEq(AmuletLog.record.selector, bytes4(0xee5e2b69), "record(...)");
+        assertEq(AmuletLog.record.selector, bytes4(0x4b2f0fd6), "record(...)");
     }
 }

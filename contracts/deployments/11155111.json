@@ -1,5 +1,5 @@
 {
-  "amuletLog": "0xA6fA7D6F47c8aDCe20396E526E5a586bF4099Ab3",
+  "amuletLog": "0x93692bd72a7ebab60436470bb98a6672125fa1ae",
   "block": 11669363,
   "chainId": 11155111,
   "deployer": "0xfc7eaCE449aaDaD77D1063B03a24a703aF957aD2",
@@ -10,7 +10,7 @@
     "borrow": "0xc5ebeaec",
     "exactInputSingle": "0x414bf389",
     "execute": "0x400a8e44",
-    "record": "0xee5e2b69",
+    "record": "0x4b2f0fd6",
     "repay": "0x402d8883",
     "setPrice": "0x91b7f5ed",
     "supply": "0x047fc9aa",
@@ -20,5 +20,7 @@
   "simB": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
   "swapSim": "0xff79706c842E4421948Ae1e1050EE4594a4240E5",
   "weth9Sentinel": "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",
-  "amuletAccount": "0x23cf5ab5486094e36f642b98c7c7d51d1c3f8253"
+  "amuletAccount": "0x23cf5ab5486094e36f642b98c7c7d51d1c3f8253",
+  "amuletLogV1": "0xA6fA7D6F47c8aDCe20396E526E5a586bF4099Ab3",
+  "amuletLogBlock": 11678432
 }
