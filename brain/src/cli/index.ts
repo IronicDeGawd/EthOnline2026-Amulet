@@ -321,6 +321,32 @@ program.command("demo").description("one key per scenario, with the pendant conn
     const d: DemoDeps = {
       sepolia, dep, policy: defaultPolicy(dep), pendant, relayer, ledger: LEDGER_ADDRESS,
       recorder: makeRecorder(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`, dep.amuletLog),
+      askModel: async (a) => {
+        const mainnet = mainnetClient(requireSecret(s, "MAINNET_RPC_URL"));
+        const graph = new GraphClient(requireSecret(s, "GRAPH_STUDIO_KEY"));
+        if (s.AWS_PROFILE) process.env.AWS_PROFILE = s.AWS_PROFILE;
+        const pol = (await readPolicy(sepolia, agentName(AGENTS[a].label), agentPolicy(a, dep))).policy;
+        const sim = AGENTS[a].caps.targets[0] === "simB" ? dep.simB : dep.simA;
+        const [pos, lending, table] = await Promise.all([
+          readPosition(sepolia, sim, dep.amuletAccount ?? LEDGER_ADDRESS),
+          fetchLending(graph, "aaveV3"),
+          fetchYieldTable(graph, mainnet, YIELD_ASSET).catch(() => ({ rows: [] })),
+        ]);
+        // The live WETH spread is flat most days, so the scout would always stand down and
+        // there would be nothing to show. Same lever as `run --simulate yield`, said out loud.
+        let rows = table.rows;
+        if (a === "yield" && rows.length >= 2) {
+          const aave = rows.find((r) => r.protocol === "Aave");
+          const best = rows[0];
+          if (aave && best.supplyRateBps - aave.supplyRateBps <= 150) {
+            rows = [{ ...best, protocol: "Spark", supplyRateBps: aave.supplyRateBps + 250 }, ...rows.filter((r) => r.protocol !== "Spark")];
+            log("  (simulated: Spark pays 250 bps more than Aave; the live spread is flat today)");
+          }
+        }
+        return makeNovaDecider(s.AWS_REGION || "us-east-1").decide(
+          pos, { current: pickMarket(lending.markets, "WETH"), yield: rows }, pol, AGENTS[a].mandate,
+        );
+      },
       setPrice: (p) => setPrice(dep.simA, p, rpc, dk),
       setRecord: async (name, key, value) => {
         await writeRecords(deployerSigner(rpc, dk), loadEnsDeployment().resolver, { [key]: value }, log, name);
@@ -341,7 +367,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
       if (k === "q" || raw === "\u0003") { pendant.close(); process.exit(0); }
       if (k === "m") { console.log(MENU); return; }
       if (busy) { log("still on that one — swipe or sign on the wrist first"); return; }
-      if (!k || !"1234567890prs".includes(k)) return;
+      if (!k || !"1234567890dyprs".includes(k)) return;
       busy = true;
       runScenario(k, d).catch((e) => log(`failed: ${(e as Error).message.split("\n")[0]}`)).finally(() => { busy = false; });
     });

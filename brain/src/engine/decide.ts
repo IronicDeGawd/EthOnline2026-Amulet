@@ -45,9 +45,19 @@ function fmtUsd(units: bigint): string {
 // want to be able to say the refusals happen despite the model having been told.
 export function brief(p: Position, market: MarketContext, policy: Policy, mandate: string, ev?: Evidence): { system: string; user: string } {
   const hf = Number.isFinite(p.healthFactor) ? p.healthFactor.toFixed(3) : "none (no debt)";
-  const yields = (market.yield ?? [])
+  const rows = market.yield ?? [];
+  const yields = rows
     .map((r) => `  ${r.protocol} ${r.symbol} ${(r.supplyRateBps / 100).toFixed(2)}% deposits $${(r.depositUSD / 1e6).toFixed(0)}M`)
     .join("\n");
+  // A small model should not be asked to do arithmetic it can get wrong: the comparison that
+  // decides MOVE_SUPPLY is spelled out, along with the verdict its own policy implies.
+  const best = rows[0];
+  const here = rows.find((r) => r.protocol === CURRENT_VENUE);
+  const spread = best && here ? best.supplyRateBps - here.supplyRateBps : undefined;
+  const spreadLine = best && here && spread !== undefined
+    ? `best venue ${best.protocol} at ${(best.supplyRateBps / 100).toFixed(2)}% vs your venue ${here.protocol} at ${(here.supplyRateBps / 100).toFixed(2)}%: ` +
+      `a difference of ${spread} bps, which is ${spread > policy.yield_delta_bps ? "ABOVE" : "below"} the ${policy.yield_delta_bps} bps your policy asks for\n`
+    : "";
   return {
     system:
       `${mandate}\n` +
@@ -63,7 +73,7 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
       'When you choose not to act, reply {"act": false, "why": "..."} and nothing else. ' +
       "amountEth is a decimal number of ETH as a string. why is one sentence under 120 characters.",
     user:
-      `position: ${p.name}\n` +
+      `position: ${p.name}  (this is the only market you may name; the venue you move to is chosen by the ranking, not by you)\n` +
       `  collateral: ${formatEther(p.collateralWei)} ETH\n` +
       `  debt: ${fmtUsd(p.debtUnits)}\n` +
       `  price: $${(Number(p.price) / 1e8).toFixed(2)} per ETH\n` +
@@ -74,6 +84,11 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
           `supply ${(market.current.supplyRateBps / 100).toFixed(2)}%, borrow ${(market.current.borrowRateBps / 100).toFixed(2)}%\n`
         : "") +
       (yields ? `venues paying for this asset:\n${yields}\n` : "") +
+      spreadLine +
+      // Spelled out, because a small model reads "no debt" as "nothing to do" otherwise.
+      (p.debtUnits === 0n
+        ? "this position has no debt, so REPAY_DEBT is not available; MOVE_SUPPLY and ADD_COLLATERAL do not need debt\n"
+        : "") +
       `your limits (the wearer's device enforces these; exceeding one gets you refused):\n` +
       `  most you may send in one action: ${formatEther(policy.max_value_wei)} ETH\n` +
       `  markets you may touch: ${p.name}\n` +
@@ -124,9 +139,16 @@ export function validate(d: Decision, p: Position, market: MarketContext, policy
     };
   }
 
-  if (d.market && d.market.toLowerCase() !== p.name.toLowerCase()) {
-    return { reason: `market "${d.market}" is not one it may touch (${p.name})` };
-  }
+  // The contract it may touch is never taken from the model — it is always this agent's own
+  // market. The name is checked only to catch a model that thinks it is somewhere else. For a
+  // move, naming the venue it wants to move to (Spark, Compound) is the natural answer, so
+  // that is allowed too; the execution still happens on the agent's own market.
+  const venues = (market.yield ?? []).map((r) => r.protocol.toLowerCase());
+  const named = d.market?.toLowerCase() ?? "";
+  const naming_ok = !named
+    || named === p.name.toLowerCase()
+    || (d.action === "MOVE_SUPPLY" && venues.some((v) => named.startsWith(v)));
+  if (!naming_ok) return { reason: `market "${d.market}" is not one it may touch (${p.name})` };
 
   let wei: bigint;
   try { wei = parseEther((d.amountEth ?? "").length ? (d.amountEth as string) : "0"); }

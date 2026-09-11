@@ -117,3 +117,23 @@ describe("what the model is told", () => {
     expect(user).toContain("health factor");
   });
 });
+
+describe("naming a venue on a move", () => {
+  it("accepts the venue it wants to move to, and still executes on its own market", () => {
+    const v = validate({ act: true, action: "MOVE_SUPPLY", market: "Spark WETH", amountEth: "0.002" }, position(), market, { ...policy, yield_delta_bps: 150 });
+    expect(v.candidate?.action).toBe("MOVE_SUPPLY");
+    expect(v.candidate?.sim).toBe(SIM); // never an address the model supplied
+    expect(v.candidate?.simName).toBe("Sim-A");
+  });
+
+  it("still refuses a venue that is nowhere in the ranking", () => {
+    const v = validate({ act: true, action: "MOVE_SUPPLY", market: "Tortuga Yield Farm", amountEth: "0.002" }, position(), market, { ...policy, yield_delta_bps: 150 });
+    expect(v.candidate).toBeUndefined();
+    expect(v.reason).toContain("not one it may touch");
+  });
+
+  it("refuses a made-up market on a repay, where no venue naming applies", () => {
+    const v = validate({ act: true, action: "REPAY_DEBT", market: "Spark WETH", amountEth: "0.004" }, position(), market, policy);
+    expect(v.candidate).toBeUndefined();
+  });
+});

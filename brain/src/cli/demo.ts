@@ -11,6 +11,8 @@ import { assembleOptions, pickCandidate } from "../engine/options.js";
 import { readRecords } from "../ens/resolver.js";
 import type { Candidate } from "../engine/rules.js";
 import type { YieldRow } from "../data/graph/yield.js";
+import { actionName } from "../chain/account712.js";
+import type { Judgement } from "../engine/decide.js";
 
 export interface DemoDeps {
   sepolia: PublicClient;
@@ -19,6 +21,7 @@ export interface DemoDeps {
   pendant: PendantLink;
   relayer: Relayer;
   recorder?: Recorder;
+  askModel?: (agent: AgentKey) => Promise<Judgement>;
   ledger: `0x${string}`;
   setPrice: (p: bigint) => Promise<void>;
   setRecord: (name: string, key: string, value: string) => Promise<void>;
@@ -124,6 +127,44 @@ async function yieldCard(d: DemoDeps): Promise<void> {
   await goodRequest(d, "yield", "0.002", chosen.simName === "Sim-B" ? "simB" : "simA");
 }
 
+// Nova decides for real, here, now. Whatever it answers is checked against that agent's
+// policy; if it survives, it goes to the wrist exactly like any other request.
+async function modelDecides(d: DemoDeps, agent: AgentKey): Promise<void> {
+  if (!d.askModel) { d.log("no model wired into this run"); return; }
+  d.log(`asking ${AGENTS[agent].title} what it would do…`);
+  const j = await d.askModel(agent);
+  d.log(`  it said: ${JSON.stringify(j.decision ?? null)}`);
+  d.log(`  verdict: ${j.reason}`);
+  if (!j.candidate) { d.log("  nothing reaches the wrist"); return; }
+  const c = j.candidate;
+  const act = actionName(c.action);
+  if (!act) { d.log(`  ${c.action} has nothing to sign`); return; }
+  wrist(d);
+  const account = d.dep.amuletAccount!;
+  const summary = `${act} ${String(c.facts.amount ?? "")} on ${c.simName}`.replace(/\s+/g, " ");
+  const intent = {
+    summary, action: act, market: c.sim, amount: toHex(c.valueWei),
+    nonce: toHex(await accountNonce(d.sepolia, account)),
+    deadline: toHex(BigInt(Math.floor(Date.now() / 1000) + 900)), account,
+  };
+  const id = ulid();
+  d.pendant.send({
+    type: "proposal", id, agent: AGENTS[agent].label, tier: 2, action: c.action,
+    human: summary, rationale: j.decision?.why ?? "The model chose this.",
+    tx: { chainId: d.dep.chainId, to: c.sim, value: toHex(c.valueWei), data: d.dep.selectors.supply,
+          nonce: 0, maxFeePerGas: toHex(0n), maxPriorityFeePerGas: toHex(0n), gas: 90_000 },
+    evidence: EVIDENCE, expiresAt: Math.floor(Date.now() / 1000) + 600, intent,
+  });
+  const decision = await d.pendant.awaitDecision(id, 300_000);
+  d.log(`  the wrist said: ${decision.result}`);
+  await note(d, id, AGENTS[agent].label, c.sim, c.valueWei, decision.result);
+  if (decision.result === "approved" && decision.signature) {
+    const hash = await d.relayer.relay(intent as never, decision.signature);
+    const r = await d.sepolia.waitForTransactionReceipt({ hash });
+    d.log(`  relayed and mined in block ${r.blockNumber}: https://sepolia.etherscan.io/tx/${hash}`);
+  }
+}
+
 export const MENU = `
   1  a request from the repay bot        typed data, sign it on the Nano X
   2  a request from the yield scout      the other face, the other market
@@ -135,6 +176,8 @@ export const MENU = `
   8  the agent tries to raise its cap    the resolver refuses it
   9  the Ledger lowers repay's cap       to 0.02 ETH; press 5 after it
   0  put repay's cap back                0.05 ETH again
+  d  let the repay bot decide            Nova chooses; the policy checks it
+  y  let the yield scout decide          its own mandate, its own cap
   p  drop the Sim-A price                $1100: the health factor falls
   r  put the Sim-A price back            $1600: healthy again
   s  status                              caps, balance, nonce, pendant
@@ -171,6 +214,8 @@ export async function runScenario(k: string, d: DemoDeps): Promise<void> {
       d.log("putting repay's cap back to 0.05 ETH");
       await d.setRecord(repayName, "amulet.max_value_wei", "50000000000000000");
       return;
+    case "d": return modelDecides(d, "repay");
+    case "y": return modelDecides(d, "yield");
     case "p":
       d.log("dropping the Sim-A price to $1100");
       await d.setPrice(110_000_000_000n);
