@@ -6,6 +6,13 @@
 
 Built for [ETHOnline 2026](https://ethglobal.com/events/ethonline2026) · From-Scratch track · Sponsors: **Ledger · The Graph · ENS**
 
+| | |
+|---|---|
+| Project page | https://ironicdegawd.github.io/EthOnline2026-Amulet/ |
+| Upstream contribution | [LedgerHQ/app-ethereum#1109](https://github.com/LedgerHQ/app-ethereum/pull/1109) — documents the `v` byte `SIGN ETH TRANSACTION` returns, found by measuring it here |
+| Decision log (Sepolia) | [`0x93692bd7…fa1ae`](https://sepolia.etherscan.io/address/0x93692bd72a7ebab60436470bb98a6672125fa1ae) |
+| Account (Sepolia) | [`0x23cf5ab5…3f8253`](https://sepolia.etherscan.io/address/0x23cf5ab5486094e36f642b98c7c7d51d1c3f8253) |
+
 ---
 
 ## What it is
