@@ -49,7 +49,7 @@ export interface Relayer {
 
 export function makeRelayer(rpcUrl: string, pk: Hex): Relayer {
   const account = privateKeyToAccount(pk);
-  const wallet = createWalletClient({ account, chain: sepolia, transport: http(rpcUrl) });
+  const wallet = createWalletClient({ account, chain: sepolia, transport: http(rpcUrl, { timeout: 20_000 }) });
   return {
     address: account.address,
     relay: (i, signature) =>

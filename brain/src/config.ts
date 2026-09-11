@@ -8,6 +8,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = resolve(here, "..", "..");
 
 export const SEPOLIA_CHAIN_ID = 11155111;
+// How long to wait for a Sepolia receipt before giving up. Unbounded waits are how a demo
+// wedges: a dropped or underpriced transaction never mines and the key you pressed never
+// finishes, so the next key is refused as "still on that one".
+export const RECEIPT_TIMEOUT_MS = 120_000;
 export const MAINNET_CHAIN_ID = 1;
 
 // Ledger Nano X account the pendant carries (path 44'/60'/0'/0/0). The pendant reports it

@@ -15,7 +15,7 @@ import { ulid } from "ulid";
 import { namehash, normalize } from "viem/ens";
 import { sepolia as sepoliaChain } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { AGENTS, ENS, LEDGER_ADDRESS, PENDANT_PORT, REPO_ROOT, SEPOLIA_CHAIN_ID, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, DEFAULT_AGENT, agentName, loadDeployments, loadEnsDeployment, type AgentKey, type Deployments } from "../config.js";
+import { AGENTS, ENS, LEDGER_ADDRESS, PENDANT_PORT, RECEIPT_TIMEOUT_MS, REPO_ROOT, SEPOLIA_CHAIN_ID, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, DEFAULT_AGENT, agentName, loadDeployments, loadEnsDeployment, type AgentKey, type Deployments } from "../config.js";
 import { deployerSigner, ensSetup, issueAgent, revertReason, revokeAgent, signerFromKey, writeRecords } from "../ens/setup.js";
 import { FACES, faceAvatar, faceRecord } from "../agents/face.js";
 import { readPolicy, readRecords, type PolicyRead } from "../ens/resolver.js";
@@ -69,8 +69,26 @@ async function setPrice(sim: `0x${string}`, price: bigint, rpc: string, key: Hex
     address: sim, abi: parseAbi(["function setPrice(uint256)"]), functionName: "setPrice", args: [price],
     account: signer.account, chain: sepoliaChain,
   });
-  await signer.pub.waitForTransactionReceipt({ hash });
+  await signer.pub.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
   log(`  tx ${hash}`);
+}
+
+// Wait for the pendant, but not forever: a command that hangs with no line printed looks
+// identical to one that is broken.
+async function waitForPendant(pendant: PendantLink, ms = 120_000): Promise<void> {
+  if (pendant.connected) return;
+  log("waiting for the pendant to connect…");
+  const connected = await new Promise<boolean>((r) => {
+    const t = setTimeout(() => r(false), ms);
+    pendant.once("connected", () => { clearTimeout(t); r(true); });
+  });
+  if (!connected) throw new Error(`the pendant did not connect within ${ms / 1000}s — is it powered and on this network?`);
+}
+
+// The only writer whose log entries count as this agent's memory.
+function recorderAddress(s: Record<string, string | undefined>): `0x${string}` | undefined {
+  const pk = s.BRAIN_LOG_PK as `0x${string}` | undefined;
+  return pk ? privateKeyToAccount(pk).address : undefined;
 }
 
 async function boot(opts: { llm: boolean; port: number; simulate?: string; once?: boolean; deployment?: string; ens?: boolean; raw?: boolean; rules?: boolean; agent?: string }) {
@@ -186,7 +204,7 @@ program.command("decide").description("ask the model what it would propose right
     ]);
     const market = { current: pickMarket(lending.markets, "WETH"), yield: table.rows };
     log(`${AGENTS[agent].title} on ${pos.name}: HF ${Number.isFinite(pos.healthFactor) ? pos.healthFactor.toFixed(3) : "none"}, cap ${Number(policy.max_value_wei) / 1e18} ETH`);
-    const hist = await fetchHistory(AGENTS[agent].label);
+    const hist = await fetchHistory(AGENTS[agent].label, recorderAddress(s));
     log(hist ? `memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused` : "memory: nothing indexed yet");
     const q = await readEthUsd(sepolia).catch(() => undefined);
     if (q) log(formatQuote(q));
@@ -217,7 +235,7 @@ program.command("oracle").description("read Chainlink ETH/USD; --sync points the
     for (const sim of [dep.simA, dep.simB]) {
       const before = await readPosition(sepolia, sim, dep.amuletAccount ?? LEDGER_ADDRESS);
       const hash = await syncSimPrice(signer.wallet, signer.account, sim, q.price);
-      await signer.pub.waitForTransactionReceipt({ hash });
+      await signer.pub.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
       const after = await readPosition(sepolia, sim, dep.amuletAccount ?? LEDGER_ADDRESS);
       log(`${before.name}: $${Number(before.price) / 1e8} → $${Number(after.price) / 1e8}` +
           (Number.isFinite(after.healthFactor) ? `, health factor ${after.healthFactor.toFixed(3)}` : ", no debt"));
@@ -312,7 +330,7 @@ program.command("intent").description("push one typed-data intent to the pendant
     const pendant = new PendantLink();
     await pendant.listen(Number(o.port));
     log(`listening on ws://${lanIp()}:${o.port}; waiting for the pendant`);
-    await new Promise<void>((r) => { if (pendant.connected) r(); else pendant.once("connected", () => r()); });
+    await waitForPendant(pendant);
     await new Promise((r) => setTimeout(r, 1200));
     const id = ulid();
     const p = {
@@ -329,7 +347,7 @@ program.command("intent").description("push one typed-data intent to the pendant
     if (decision.result === "approved" && decision.signature) {
       const hash = await relayer.relay(intent as never, decision.signature);
       log(`relayed by ${relayer.address} → ${hash}`);
-      const r = await sepolia.waitForTransactionReceipt({ hash });
+      const r = await sepolia.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
       log(`mined in block ${r.blockNumber} status ${r.status} https://sepolia.etherscan.io/tx/${hash}`);
     }
     pendant.close();
@@ -361,7 +379,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
         const signer = signerFromKey(rpc, dk);
         for (const sim of [dep.simA, dep.simB]) {
           const hash = await syncSimPrice(signer.wallet, signer.account, sim, q.price);
-          await signer.pub.waitForTransactionReceipt({ hash });
+          await signer.pub.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
         }
         log(`both sims now price ETH at $${(Number(q.price) / 1e8).toFixed(2)}, the same number the rest of DeFi reads`);
       },
@@ -387,7 +405,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
             log("  (simulated: Spark pays 250 bps more than Aave; the live spread is flat today)");
           }
         }
-        const hist = await fetchHistory(AGENTS[a].label);
+        const hist = await fetchHistory(AGENTS[a].label, recorderAddress(s));
         if (hist) log(`  memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused`);
         else log("  memory: nothing indexed yet");
         const q = await readEthUsd(sepolia).catch(() => undefined);
@@ -456,7 +474,7 @@ program.command("attack").description("play a compromised brain: push an out-of-
     const pendant = new PendantLink();
     await pendant.listen(Number(o.port));
     log(`listening on ws://${lanIp()}:${o.port}; waiting for the pendant`);
-    await new Promise<void>((r) => { if (pendant.connected) r(); else pendant.once("connected", () => r()); });
+    await waitForPendant(pendant);
     let ledger = LEDGER_ADDRESS as `0x${string}`;
     pendant.on("presence", (p) => { if (p.address) ledger = p.address as `0x${string}`; });
     await new Promise((r) => setTimeout(r, 1500));
@@ -586,7 +604,7 @@ program.command("deploy-log").description("deploy the decision log contract and 
       abi: artifact.abi as never, bytecode: artifact.bytecode.object,
       account: signer.account, chain: sepoliaChain,
     });
-    const r = await signer.pub.waitForTransactionReceipt({ hash });
+    const r = await signer.pub.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
     const address = r.contractAddress!;
     log(`AmuletLog at ${address} in block ${r.blockNumber}`);
     const path = resolve(REPO_ROOT, "contracts", "deployments", `${SEPOLIA_CHAIN_ID}.json`);

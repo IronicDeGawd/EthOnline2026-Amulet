@@ -164,3 +164,53 @@ describe("being told it was refused", () => {
     expect(user).toContain("broke your limits");
   });
 });
+
+describe("amounts that are not amounts", () => {
+  it("keeps a negative amount negative instead of tidying it into a positive one", async () => {
+    const { parseDecision } = await import("../src/engine/decide.js");
+    const d = parseDecision('{"act": true, "action": "ADD_COLLATERAL", "amountEth": "-0.5"}');
+    expect(d?.amountEth).toBe("-0.5");
+    expect(validate(d!, position(), market, policy).candidate).toBeUndefined();
+  });
+
+  it("refuses a negative number too", async () => {
+    const { parseDecision } = await import("../src/engine/decide.js");
+    const d = parseDecision('{"act": true, "action": "ADD_COLLATERAL", "amountEth": -0.5}');
+    expect(validate(d!, position(), market, policy).candidate).toBeUndefined();
+  });
+});
+
+describe("the rest of the checks", () => {
+  it("never repays more than is owed", () => {
+    // 0.01 ETH at $1600 is ~$16, well over the $10 of debt on this position
+    const p = position(1600_00000000n, 50_000_000_000_000_000n, 10_000_000n);
+    const v = validate({ act: true, action: "REPAY_DEBT", amountEth: "0.01" }, p, market, policy);
+    expect(v.candidate?.debtUnits).toBe(10_000_000n);
+  });
+
+  it("refuses a repay too small to touch the debt", () => {
+    const v = validate({ act: true, action: "REPAY_DEBT", amountEth: "0.0000000001" }, position(), market, policy);
+    expect(v.candidate).toBeUndefined();
+    expect(v.reason).toMatch(/too small|zero/);
+  });
+
+  it("refuses a move to a venue too thin to hold the position", () => {
+    const thin: MarketContext = { yield: [{ ...rows[0], depositUSD: 1 }, rows[1]] };
+    const v = validate({ act: true, action: "MOVE_SUPPLY", amountEth: "0.002" }, position(), thin, { ...policy, yield_delta_bps: 150 });
+    expect(v.candidate).toBeUndefined();
+    expect(v.reason).toContain("too thin");
+  });
+
+  it("refuses a move when the current venue already pays the most", () => {
+    const here: MarketContext = { yield: [rows[1], { ...rows[0], supplyRateBps: 10 }] };
+    const v = validate({ act: true, action: "MOVE_SUPPLY", amountEth: "0.002" }, position(), here, policy);
+    expect(v.candidate).toBeUndefined();
+    expect(v.reason).toContain("already pays the most");
+  });
+
+  it("refuses a move with no ranking to move against", () => {
+    const v = validate({ act: true, action: "MOVE_SUPPLY", amountEth: "0.002" }, position(), {}, policy);
+    expect(v.candidate).toBeUndefined();
+    expect(v.reason).toContain("no yield table");
+  });
+});

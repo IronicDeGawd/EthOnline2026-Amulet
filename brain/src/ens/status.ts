@@ -25,7 +25,7 @@ export interface StatusDeps {
 
 export function makeStatusWriter(d: StatusDeps): StatusWriter {
   const account = privateKeyToAccount(d.pk);
-  const wallet = createWalletClient({ account, chain: sepolia, transport: http(d.rpcUrl) });
+  const wallet = createWalletClient({ account, chain: sepolia, transport: http(d.rpcUrl, { timeout: 20_000 }) });
   const last = new Map<string, string>();
 
   async function write(key: string, value: string): Promise<Hex | undefined> {

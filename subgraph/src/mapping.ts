@@ -94,6 +94,11 @@ export function handleAction(event: ActionEvent): void {
     a.refusedByPolicy += 1;
   } else if (outcome == "expired") {
     a.expired += 1;
+  } else {
+    // An outcome outside 0..3 — anyone may call record(), so this is reachable. It is counted
+    // as an unanswered request rather than dropped, so the per-agent buckets always add up to
+    // `requests`; a history whose numbers disagree with themselves is worse than a blunt one.
+    a.expired += 1;
   }
   a.lastSeen = ts;
   a.save();

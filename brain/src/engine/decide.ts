@@ -120,8 +120,13 @@ export function parseDecision(text: string): Decision | undefined {
   if (!j.act) return d;
   if (typeof j.action === "string") d.action = j.action.toUpperCase().trim() as Decision["action"];
   if (typeof j.market === "string") d.market = j.market.trim();
+  // Stripping non-digits would quietly turn "-0.5" into "0.5". A negative amount is a
+  // mistake, not something to tidy up, so it is kept as-is and refused by validate().
   if (typeof j.amountEth === "number") d.amountEth = String(j.amountEth);
-  if (typeof j.amountEth === "string") d.amountEth = j.amountEth.trim().replace(/[^\d.]/g, "");
+  if (typeof j.amountEth === "string") {
+    const raw = j.amountEth.trim();
+    d.amountEth = /^-/.test(raw) ? raw : raw.replace(/[^\d.]/g, "");
+  }
   return d;
 }
 

@@ -214,8 +214,9 @@ export class Brain {
     // 3. The model decides, if there is one. Its answer is checked against the same policy
     // the pendant holds; anything it invents is dropped and the rules answer instead.
     if (d.decider) {
-      const hist = await fetchHistory(d.agent ?? "");
+      const hist = await fetchHistory(d.agent ?? "", d.recorder?.address);
       if (hist) d.log(`memory: ${hist.requests} past requests, ${hist.approved} approved, ${hist.rejected + hist.refusedByPolicy} refused`);
+      else d.log("memory: nothing to recall — either it has never asked, or the subgraph did not answer");
       const j = await d.decider.decide(pos, market, d.policy, d.mandate ?? "", fresh.evidence, hist, this.lastRefusal);
       if (j.attempts === 2) d.log(`model: refused once (${j.firstTry}), asked again`);
       d.log(`model: ${j.decision?.act === false ? "stand down" : j.decision?.action ?? "—"} — ${j.reason}`);

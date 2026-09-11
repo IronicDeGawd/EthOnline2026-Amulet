@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyLines, type AgentHistory } from "../src/data/graph/history.js";
+import { fetchHistory, historyLines, tally, type AgentHistory } from "../src/data/graph/history.js";
 
 const NOW = 1_757_000_000_000; // fixed clock so the wording is testable
 const secs = NOW / 1000;
@@ -63,5 +63,69 @@ describe("what the agent remembers", () => {
     const many = Array.from({ length: 12 }, (_, i) => ({ outcome: "approved", value: "1000000000000000", target: "0x1", timestamp: secs - i * 60 }));
     const lines = historyLines(history(many, { requests: 12, approved: 12 }), NOW).split("\n").filter((l) => l.startsWith("  "));
     expect(lines).toHaveLength(5);
+  });
+});
+
+
+describe("counting only what this brain wrote", () => {
+  it("tallies rows into the buckets the model reads", () => {
+    const t = tally("repay", [
+      { outcome: "approved", value: "1", target: "0x1", timestamp: 1 },
+      { outcome: "policy_reject", value: "1", target: "0x1", timestamp: 2 },
+      { outcome: "rejected", value: "1", target: "0x1", timestamp: 3 },
+      { outcome: "expired", value: "1", target: "0x1", timestamp: 4 },
+      { outcome: "something-else", value: "1", target: "0x1", timestamp: 5 },
+    ]);
+    expect(t.requests).toBe(5);
+    expect(t.approved).toBe(1);
+    expect(t.rejected).toBe(1);
+    expect(t.refusedByPolicy).toBe(1);
+    expect(t.expired).toBe(1);
+  });
+});
+
+describe("memory is refused without a writer to trust", () => {
+  const WRITER = "0x1111111111111111111111111111111111111111" as const;
+
+  it("returns nothing when there is no writing key, and never calls out", async () => {
+    let called = false;
+    const g = globalThis as { fetch: typeof fetch };
+    const real = g.fetch;
+    g.fetch = (async () => { called = true; return new Response("{}"); }) as typeof fetch;
+    try {
+      expect(await fetchHistory("repay", undefined)).toBeUndefined();
+      expect(called).toBe(false);
+    } finally { g.fetch = real; }
+  });
+
+  it("asks the subgraph only for rows that key wrote", async () => {
+    let body = "";
+    const g = globalThis as { fetch: typeof fetch };
+    const real = g.fetch;
+    g.fetch = (async (_u: string, init: RequestInit) => {
+      body = String(init.body);
+      return new Response(JSON.stringify({ data: { actions: [{ outcome: "approved", value: "1000000000000000", target: "0x1", timestamp: 1 }] } }));
+    }) as unknown as typeof fetch;
+    try {
+      const h = await fetchHistory("repay", WRITER);
+      expect(body).toContain("sender");
+      expect(body).toContain(WRITER.toLowerCase());
+      expect(h?.requests).toBe(1);
+      expect(h?.approved).toBe(1);
+    } finally { g.fetch = real; }
+  });
+
+  it("survives a broken answer rather than taking the agent down", async () => {
+    const g = globalThis as { fetch: typeof fetch };
+    const real = g.fetch;
+    for (const answer of ["not json", JSON.stringify({ data: {} }), JSON.stringify({ errors: [{ message: "boom" }] })]) {
+      g.fetch = (async () => new Response(answer)) as typeof fetch;
+      expect(await fetchHistory("repay", WRITER)).toBeUndefined();
+    }
+    g.fetch = (async () => { throw new Error("network down"); }) as typeof fetch;
+    expect(await fetchHistory("repay", WRITER)).toBeUndefined();
+    g.fetch = (async () => new Response("{}", { status: 500 })) as typeof fetch;
+    expect(await fetchHistory("repay", WRITER)).toBeUndefined();
+    g.fetch = real;
   });
 });

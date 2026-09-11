@@ -2,12 +2,13 @@
 // reconnect between scenarios and each one starts the moment you press a key.
 import { parseEther, toHex, type Hex, type PublicClient } from "viem";
 import { ulid } from "ulid";
-import { AGENTS, agentName, type AgentKey, type Deployments, type Policy } from "../config.js";
+import { AGENTS, agentName, RECEIPT_TIMEOUT_MS, type AgentKey, type Deployments, type Policy } from "../config.js";
 import { PendantLink } from "../pendant/ws.js";
 import { accountNonce, makeRelayer, type Relayer } from "../chain/account712.js";
 import { proposalIdBytes32 } from "../engine/proposal.js";
 import type { Recorder } from "../chain/amuletlog.js";
 import { assembleOptions, pickCandidate } from "../engine/options.js";
+import { withinPolicy } from "../engine/policy.js";
 import { readRecords } from "../ens/resolver.js";
 import type { Candidate } from "../engine/rules.js";
 import type { YieldRow } from "../data/graph/yield.js";
@@ -81,7 +82,7 @@ async function goodRequest(d: DemoDeps, agent: AgentKey, eth: string, which: str
   await note(d, id, AGENTS[agent].label, market, amount, decision.result);
   if (decision.result === "approved" && decision.signature) {
     const hash = await d.relayer.relay(intent as never, decision.signature);
-    const r = await d.sepolia.waitForTransactionReceipt({ hash });
+    const r = await d.sepolia.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
     d.log(`  relayed and mined in block ${r.blockNumber}: https://sepolia.etherscan.io/tx/${hash}`);
   }
 }
@@ -140,6 +141,14 @@ async function modelDecides(d: DemoDeps, agent: AgentKey): Promise<void> {
   const c = j.candidate;
   const act = actionName(c.action);
   if (!act) { d.log(`  ${c.action} has nothing to sign`); return; }
+  // The same second check the running brain applies: chain, target, function, value, gas and
+  // expiry. The demo must not be a softer path to the wrist than the real one.
+  const expiresAt = Math.floor(Date.now() / 1000) + 600;
+  const pv = withinPolicy(
+    { chainId: d.dep.chainId, to: c.sim, value: c.valueWei, data: d.dep.selectors.supply, gas: 90_000, expiresAt },
+    d.policy,
+  );
+  if (!pv.ok) { d.log(`  policy refused it here, before the wrist: ${pv.reason}`); return; }
   wrist(d);
   const account = d.dep.amuletAccount!;
   const summary = `${act} ${String(c.facts.amount ?? "")} on ${c.simName}`.replace(/\s+/g, " ");
@@ -154,14 +163,14 @@ async function modelDecides(d: DemoDeps, agent: AgentKey): Promise<void> {
     human: summary, rationale: j.decision?.why ?? "The model chose this.",
     tx: { chainId: d.dep.chainId, to: c.sim, value: toHex(c.valueWei), data: d.dep.selectors.supply,
           nonce: 0, maxFeePerGas: toHex(0n), maxPriorityFeePerGas: toHex(0n), gas: 90_000 },
-    evidence: EVIDENCE, expiresAt: Math.floor(Date.now() / 1000) + 600, intent,
+    evidence: EVIDENCE, expiresAt, intent,
   });
   const decision = await d.pendant.awaitDecision(id, 300_000);
   d.log(`  the wrist said: ${decision.result}`);
   await note(d, id, AGENTS[agent].label, c.sim, c.valueWei, decision.result);
   if (decision.result === "approved" && decision.signature) {
     const hash = await d.relayer.relay(intent as never, decision.signature);
-    const r = await d.sepolia.waitForTransactionReceipt({ hash });
+    const r = await d.sepolia.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
     d.log(`  relayed and mined in block ${r.blockNumber}: https://sepolia.etherscan.io/tx/${hash}`);
   }
 }
