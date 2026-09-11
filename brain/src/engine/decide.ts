@@ -89,8 +89,12 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
       (yields ? `venues paying for this asset:\n${yields}\n` : "") +
       spreadLine +
       // Spelled out, because a small model reads "no debt" as "nothing to do" otherwise.
+      // A guardian with nothing to guard should say so, not keep topping up a position that
+      // cannot be liquidated. Spelled out, because "health factor: none" reads as a gap to fill.
       (p.debtUnits === 0n
-        ? "this position has no debt, so REPAY_DEBT is not available; MOVE_SUPPLY and ADD_COLLATERAL do not need debt\n"
+        ? "this position has NO DEBT, so it cannot be liquidated and there is nothing to protect. " +
+          "REPAY_DEBT is unavailable, and adding collateral would not make it safer than it already is. " +
+          "If protecting this position is your whole job, the right answer here is to stand down.\n"
         : "") +
       // What it can actually pay with. An agent proposing more than the account holds wastes
       // the wearer's attention on something that would revert before it reached the chain.
