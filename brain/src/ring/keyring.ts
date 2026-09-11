@@ -81,6 +81,20 @@ function ringToFile(args: string[], outFile: string, timeoutMs = 45_000): Promis
 
 // Decrypts secrets.enc and returns the map. Never logs values.
 export async function loadSecrets(file = SECRETS_ENC): Promise<Secrets> {
+  // On a server there is no Ledger, so there is no ring to decrypt with. AMULET_SECRETS names a
+  // plaintext KEY=VALUE file instead — deliberately explicit, so nobody reaches this path by
+  // accident on a machine that does have a ring. What goes in it matters more than the format:
+  // the log/relayer key, which can write one event and relay intents the Ledger already signed,
+  // and read-only API keys. The deployer key never belongs here.
+  const plain = process.env.AMULET_SECRETS;
+  if (plain) {
+    if (!existsSync(plain)) throw new Error(`AMULET_SECRETS points at ${plain}, which does not exist`);
+    const s = parseKv(readFileSync(plain, "utf8"));
+    for (const k of ["GRAPH_STUDIO_KEY", "SEPOLIA_RPC_URL", "MAINNET_RPC_URL"]) {
+      if (!s[k]) throw new Error(`secret ${k} missing from ${plain}`);
+    }
+    return s;
+  }
   if (!existsSync(file)) {
     throw new Error(`no ${file}: run \`amulet secrets seal\` on a machine provisioned with \`wallet-cli ring init\``);
   }
