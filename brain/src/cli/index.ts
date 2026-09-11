@@ -23,7 +23,7 @@ import { makeStatusWriter, type StatusWriter } from "../ens/status.js";
 import { formatView, readMainnetView } from "../chain/account.js";
 import { accountBalance, accountNonce, makeRelayer, type Relayer } from "../chain/account712.js";
 import { runAttack, type AttackKind } from "../attack.js";
-import { MENU, runScenario, type DemoDeps } from "./demo.js";
+import { MENU, runScenario, swapAsk, type DemoDeps } from "./demo.js";
 import { fetchYieldTable, formatTable, YIELD_ASSET } from "../data/graph/yield.js";
 import { RESOLVER_ABI } from "../ens/abi.js";
 import { agentPolicy, policyRecords } from "../engine/policy.js";
@@ -372,6 +372,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
     const d: DemoDeps = {
       sepolia, dep, policy: defaultPolicy(dep), pendant, relayer, ledger: LEDGER_ADDRESS,
       recorder: makeRecorder(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`, dep.amuletLog),
+      simPrice: async () => (await readPosition(sepolia, dep.simA, dep.amuletAccount ?? LEDGER_ADDRESS)).price,
       syncPrice: async () => {
         const q = await readEthUsd(sepolia);
         log(formatQuote(q));
@@ -424,6 +425,15 @@ program.command("demo").description("one key per scenario, with the pendant conn
       log,
     };
 
+    // The firmware's swap screen sends this; the w key fakes the same thing.
+    pendant.on("ask", (a) => {
+      if (a.kind !== "swap") { log(`ignoring an ask I do not understand: ${a.kind}`); return; }
+      const from = a.from === "USDC" ? "USDC" : "ETH";
+      const to = a.to === "USDC" ? "USDC" : "ETH";
+      const amount = from === "ETH" ? 10_000_000_000_000_000n : 25_000_000n;
+      void swapAsk(d, from, to, amount).catch((e) => log(`swap failed: ${(e as Error).message.split("\n")[0]}`));
+    });
+
     console.log(MENU);
     process.stdin.setRawMode?.(true);
     process.stdin.resume();
@@ -434,7 +444,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
       if (k === "q" || raw === "\u0003") { pendant.close(); process.exit(0); }
       if (k === "m") { console.log(MENU); return; }
       if (busy) { log("still on that one — swipe or sign on the wrist first"); return; }
-      if (!k || !"1234567890dyoprs".includes(k)) return;
+      if (!k || !"1234567890dyoprsw".includes(k)) return;
       busy = true;
       runScenario(k, d).catch((e) => log(`failed: ${(e as Error).message.split("\n")[0]}`)).finally(() => { busy = false; });
     });

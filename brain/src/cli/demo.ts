@@ -9,6 +9,7 @@ import { proposalIdBytes32 } from "../engine/proposal.js";
 import type { Recorder } from "../chain/amuletlog.js";
 import { assembleOptions, pickCandidate } from "../engine/options.js";
 import { withinPolicy } from "../engine/policy.js";
+import { buildSwap, quoteSwap, type Side } from "../tx/swap.js";
 import { readRecords } from "../ens/resolver.js";
 import type { Candidate } from "../engine/rules.js";
 import type { YieldRow } from "../data/graph/yield.js";
@@ -24,6 +25,7 @@ export interface DemoDeps {
   recorder?: Recorder;
   askModel?: (agent: AgentKey) => Promise<Judgement>;
   syncPrice?: () => Promise<void>;
+  simPrice: () => Promise<bigint>;
   ledger: `0x${string}`;
   setPrice: (p: bigint) => Promise<void>;
   setRecord: (name: string, key: string, value: string) => Promise<void>;
@@ -175,6 +177,36 @@ async function modelDecides(d: DemoDeps, agent: AgentKey): Promise<void> {
   }
 }
 
+// The wearer asks, the agent answers. The request comes up from the wrist; the agent finds a
+// route and sends back something to sign — which still has to pass the same policy check.
+export async function swapAsk(d: DemoDeps, from: Side, to: Side, amountIn: bigint): Promise<void> {
+  d.log(`the wrist asks: swap ${from} for ${to}`);
+  const q = await quoteSwap(from, to, amountIn);
+  if (!q) { d.log("  no route priced — the agent has nothing honest to propose"); return; }
+  d.log(`  ${q.route} quotes 1 ETH = ${q.rate.toFixed(2)} USDC on mainnet`);
+  const price = await d.simPrice();
+  const built = buildSwap(d.dep, q, d.dep.amuletAccount!, price, BigInt(Math.floor(Date.now() / 1000) + 900));
+  const expiresAt = Math.floor(Date.now() / 1000) + 600;
+  const pv = withinPolicy(
+    { chainId: d.dep.chainId, to: built.to, value: built.value, data: built.data, gas: 200_000, expiresAt },
+    d.policy,
+  );
+  if (!pv.ok) { d.log(`  the policy refuses it: ${pv.reason}`); return; }
+  wrist(d);
+  const id = ulid();
+  d.log(`  proposing: ${built.human}`);
+  d.pendant.send({
+    type: "proposal", id, agent: AGENTS.yield.label, tier: 2, action: "SWAP",
+    human: built.human, rationale: built.rationale,
+    tx: { chainId: d.dep.chainId, to: built.to, value: toHex(built.value), data: built.data,
+          nonce: 0, maxFeePerGas: toHex(0n), maxPriorityFeePerGas: toHex(0n), gas: 200_000 },
+    evidence: EVIDENCE, expiresAt,
+  });
+  const decision = await d.pendant.awaitDecision(id, 300_000);
+  d.log(`  the wrist said: ${decision.result}`);
+  await note(d, id, AGENTS.yield.label, built.to, built.value, decision.result);
+}
+
 export const MENU = `
   1  a request from the repay bot        typed data, sign it on the Nano X
   2  a request from the yield scout      the other face, the other market
@@ -188,6 +220,7 @@ export const MENU = `
   0  put repay's cap back                0.05 ETH again
   d  let the repay bot decide            Nova chooses; the policy checks it
   y  let the yield scout decide          its own mandate, its own cap
+  w  the wrist asks for a swap           live route, quoted on mainnet
   o  take the real ETH price             from Chainlink, into both sims
   p  drop the Sim-A price                $1100: the health factor falls
   r  put the Sim-A price back            $1600: healthy again
@@ -227,6 +260,7 @@ export async function runScenario(k: string, d: DemoDeps): Promise<void> {
       return;
     case "d": return modelDecides(d, "repay");
     case "y": return modelDecides(d, "yield");
+    case "w": return swapAsk(d, "ETH", "USDC", 10_000_000_000_000_000n);
     case "o":
       if (!d.syncPrice) { d.log("no oracle wired into this run"); return; }
       return d.syncPrice();
