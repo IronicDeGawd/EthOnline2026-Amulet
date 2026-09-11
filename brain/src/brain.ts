@@ -341,6 +341,7 @@ export class Brain {
     try {
       const h = await d.recorder.record({
         proposalId: proposalIdBytes32(p.id),
+        agent: p.agent ?? "",
         target: p.tx.to,
         value: BigInt(p.tx.value),
         selector: selectorOf(p.tx.data),

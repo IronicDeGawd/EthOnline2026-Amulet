@@ -5,8 +5,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 
 export const AMULET_LOG_ABI = parseAbi([
-  "function record(bytes32 proposalId, address target, uint256 value, bytes4 selector, uint8 tier, uint8 outcome)",
-  "event Action(address indexed agent, bytes32 indexed proposalId, address target, uint256 value, bytes4 selector, uint8 tier, uint8 outcome, uint256 blockNumber)",
+  "function record(bytes32 proposalId, string agent, address target, uint256 value, bytes4 selector, uint8 tier, uint8 outcome)",
+  "event Action(address indexed sender, bytes32 indexed proposalId, address indexed target, string agent, uint256 value, bytes4 selector, uint8 tier, uint8 outcome, uint256 blockNumber)",
 ]);
 
 export const OUTCOME = { approved: 0, rejected: 1, policy_reject: 2, expired: 3 } as const;
@@ -14,6 +14,7 @@ export type Outcome = keyof typeof OUTCOME;
 
 export interface LogEntry {
   proposalId: Hex; // bytes32
+  agent: string;   // the ENS label the request claimed; empty when it claimed none
   target: `0x${string}`;
   value: bigint;
   selector: Hex; // bytes4
@@ -36,7 +37,7 @@ export function makeRecorder(rpcUrl: string, pk: Hex, logAddress: `0x${string}`)
         address: logAddress,
         abi: AMULET_LOG_ABI,
         functionName: "record",
-        args: [e.proposalId, e.target, e.value, e.selector, e.tier, OUTCOME[e.outcome]],
+        args: [e.proposalId, e.agent, e.target, e.value, e.selector, e.tier, OUTCOME[e.outcome]],
       }),
   };
 }

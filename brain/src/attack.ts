@@ -59,7 +59,7 @@ export async function runAttack(d: AttackDeps, a: AttackKind): Promise<Proposal>
   d.log(`DECISION ${p.id}: ${decision.result}${decision.txHash ? ` tx ${decision.txHash}` : ""}`);
   if (d.recorder) {
     try {
-      const h = await d.recorder.record({ proposalId: proposalIdBytes32(p.id), target: p.tx.to, value: BigInt(p.tx.value), selector: selectorOf(p.tx.data), tier: 2, outcome: decision.result });
+      const h = await d.recorder.record({ proposalId: proposalIdBytes32(p.id), agent: p.agent ?? "", target: p.tx.to, value: BigInt(p.tx.value), selector: selectorOf(p.tx.data), tier: 2, outcome: decision.result });
       d.log(`AmuletLog.record ${decision.result} → ${h}`);
     } catch (e) {
       d.log(`AmuletLog.record failed: ${(e as Error).message.split("\n")[0]}`);

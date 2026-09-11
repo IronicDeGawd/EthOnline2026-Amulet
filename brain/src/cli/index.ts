@@ -9,12 +9,13 @@
 import { Command } from "commander";
 import { networkInterfaces } from "node:os";
 import { resolve } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
 import { isAddress, parseAbi, parseEther, toHex, type Hex } from "viem";
 import { ulid } from "ulid";
 import { namehash, normalize } from "viem/ens";
 import { sepolia as sepoliaChain } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { AGENTS, ENS, LEDGER_ADDRESS, PENDANT_PORT, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, DEFAULT_AGENT, agentName, loadDeployments, loadEnsDeployment, type AgentKey, type Deployments } from "../config.js";
+import { AGENTS, ENS, LEDGER_ADDRESS, PENDANT_PORT, REPO_ROOT, SEPOLIA_CHAIN_ID, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, DEFAULT_AGENT, agentName, loadDeployments, loadEnsDeployment, type AgentKey, type Deployments } from "../config.js";
 import { deployerSigner, ensSetup, issueAgent, revertReason, revokeAgent, signerFromKey, writeRecords } from "../ens/setup.js";
 import { FACES, faceAvatar, faceRecord } from "../agents/face.js";
 import { readPolicy, readRecords, type PolicyRead } from "../ens/resolver.js";
@@ -458,6 +459,34 @@ async function showEns(client: ReturnType<typeof sepoliaClient>): Promise<void> 
     console.log(`  ${label.padEnd(9)} ${who}  edit policy: ${pol}  write status: ${st}`);
   }
 }
+
+// Deploys a fresh AmuletLog from the sealed deployer key and records it in the deployments
+// file, keeping the previous address under amuletLogV1 so old history stays readable.
+program.command("deploy-log").description("deploy the decision log contract and point the deployments file at it")
+  .action(async () => {
+    const s = await loadSecrets();
+    const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
+    const artifact = JSON.parse(
+      readFileSync(resolve(REPO_ROOT, "contracts", "out", "AmuletLog.sol", "AmuletLog.json"), "utf8"),
+    ) as { bytecode: { object: `0x${string}` }; abi: unknown[] };
+    const signer = signerFromKey(rpc, deployerKey(s, log));
+    log(`deploying AmuletLog from ${signer.account.address}`);
+    const hash = await signer.wallet.deployContract({
+      abi: artifact.abi as never, bytecode: artifact.bytecode.object,
+      account: signer.account, chain: sepoliaChain,
+    });
+    const r = await signer.pub.waitForTransactionReceipt({ hash });
+    const address = r.contractAddress!;
+    log(`AmuletLog at ${address} in block ${r.blockNumber}`);
+    const path = resolve(REPO_ROOT, "contracts", "deployments", `${SEPOLIA_CHAIN_ID}.json`);
+    const j = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    if (j.amuletLog && j.amuletLog !== address) j.amuletLogV1 = j.amuletLog;
+    j.amuletLog = address;
+    j.amuletLogBlock = Number(r.blockNumber);
+    (j.selectors as Record<string, string>).record = "0x4b2f0fd6";
+    writeFileSync(path, `${JSON.stringify(j, null, 2)}\n`);
+    log(`wrote ${path}`);
+  });
 
 program.command("keygen").description("fresh hot key for AmuletLog.record; shown once, paste into the plaintext as BRAIN_LOG_PK")
   .action(() => {
