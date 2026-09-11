@@ -28,6 +28,7 @@
      amount, so the static and animated pendants land in the same place. */
   figure.device { margin: 0; transform: translateY(-76px); }
   figure.device svg { display: block; width: 100%; height: auto; }
+  figure.device .facewrap { display: block; }
   figcaption { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--rule);
                display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 14px; color: var(--ink-2); }
   figcaption b { color: var(--ink); font-weight: 500; }

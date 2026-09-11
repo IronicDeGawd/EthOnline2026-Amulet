@@ -161,21 +161,20 @@ def icon(name):
     return "data:image/png;base64," + base64.b64encode(open(ICONS + name, "rb").read()).decode()
 # baselines measured by rendering the screen with the firmware's Manrope files: LVGL puts a
 # label's ascender at its `top`, so baseline = top + ascender. Device pixel (x, y) is face (x-120, y-120).
-g.append(f'<g class="screen" transform="{face}" text-anchor="middle">'
-         f'<clipPath id="pillclip"><rect x="-56" y="30" width="112" height="16"/></clipPath>'
-         f'<radialGradient id="vig" cx="0.5" cy="0.45" r="0.55"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></radialGradient>'
-         f'<circle r="119" fill="url(#vig)"/>'
+SCREEN = (f'<clipPath id="pillclip__ID__"><rect x="-56" y="30" width="112" height="16"/></clipPath>'
+         f'<radialGradient id="vig__ID__" cx="0.5" cy="0.45" r="0.55"><stop offset="0.55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.55"/></radialGradient>'
+         f'<circle r="119" fill="url(#vig__ID__)"/>'
          f'<path d="M-101 63 L101 63" stroke="#4d7fc4" stroke-width="1"/>'
          f'<image href="{icon("ic_plane.png")}" x="-14" y="-102" width="28" height="28"/>'
          f'<text y="-53" font-size="19" font-weight="600" fill="#f4f7fb">Repay</text>'
          f'<text y="0" font-size="52" font-weight="800" fill="#f4f7fb">120</text>'
          f'<text y="20" font-size="16" font-weight="700" fill="#f4f7fb">sUSDC on Aave</text>'
          f'<rect x="-62" y="26" width="124" height="24" rx="12" fill="#ffffff" fill-opacity="0.13"/>'
-         f'<text x="-56" y="44" font-size="13" font-weight="700" fill="#f4f7fb" text-anchor="start" clip-path="url(#pillclip)">Health factor 1.18 is under 1.25</text>'
+         f'<text x="-56" y="44" font-size="13" font-weight="700" fill="#f4f7fb" text-anchor="start" clip-path="url(#pillclip__ID__)">Health factor 1.18 is under 1.25</text>'
          f'<circle cx="-43" cy="87" r="13" fill="#4f8ef7"/>'
          f'<image href="{icon("ic_arrow.png")}" x="-51" y="79" width="16" height="16"/>'
-         f'<text x="-24" y="94" font-size="15" font-weight="700" fill="#f4f7fb" text-anchor="start">Hold to sign</text>'
-         f'</g>')
+         f'<text x="-24" y="94" font-size="15" font-weight="700" fill="#f4f7fb" text-anchor="start">Hold to sign</text>')
+g.append(f'<g class="screen" transform="{face}" text-anchor="middle">{SCREEN.replace("__ID__", "a")}</g>')
 # flex ribbon leaving the panel edge, folded back along the axis
 RIM = R2 - 2
 t1 = f2s(C2, -20, RIM); t2 = f2s(C2, 20, RIM)
@@ -359,6 +358,35 @@ for C, ang, side, ly, text in labels:
 svg = (f'<svg viewBox="0 0 2100 1000" class="assembly" role="img" aria-label="Exploded view of the pendant: cover glass, round display, carrier board, the ESP32-S3 module, its antenna, the haptic circuit and the battery, arranged along one axis." fill="none">'
        f'<g class="rig">{axis}<g stroke-linejoin="round" stroke-linecap="round">{body}</g><g class="callouts">{"".join(lead)}</g></g></svg>')
 
+# ---- the same pendant, face-on ---------------------------------------------------------
+# The hero shows this whenever the opening cannot run: on a phone, and on any machine asked to
+# reduce motion. It is drawn from the SCREEN string above, so there is one proposal screen on
+# the site and it is the one the firmware paints. The display's radius is 17 of the case's
+# 19.5, and the screen is measured in device pixels where the display is 119 across.
+HERO_R = 192
+HERO_DISP = HERO_R * 17 / 19.5
+hero = (
+  '<svg class="static" viewBox="0 0 620 560" role="img" aria-labelledby="devtitle devdesc" fill="none">'
+  '<title id="devtitle">The Amulet pendant, seen from the front</title>'
+  '<desc id="devdesc">A 39 millimetre round display showing a proposal to repay 120 sUSDC on Aave, '
+  'with the rule that triggered it and a prompt to hold to sign, drawn with a dimension line marking its diameter.</desc>'
+  '<g stroke="#4a545c" stroke-width="1" fill="none">'
+  '<line x1="120" y1="66" x2="500" y2="66"/>'
+  '<line x1="120" y1="58" x2="120" y2="74"/><line x1="500" y1="58" x2="500" y2="74"/>'
+  '<line x1="120" y1="82" x2="120" y2="128"/><line x1="500" y1="82" x2="500" y2="128"/></g>'
+  '<rect x="283" y="54" width="54" height="24" fill="#e9ecee"/>'
+  '<text class="data" x="310" y="71" text-anchor="middle" font-size="13" fill="#4a545c">39 mm</text>'
+  '<g stroke="#4a545c" stroke-width="1.4" fill="none">'
+  '<path d="M296 128 C 296 108 300 96 310 92"/><path d="M324 128 C 324 108 320 96 310 92"/></g>'
+  '<circle cx="310" cy="88" r="7" fill="none" stroke="#4a545c" stroke-width="1.4"/>'
+  f'<circle cx="310" cy="320" r="{HERO_R}" fill="{SOLIDS[0]}" stroke="{INK}" stroke-width="1.6"/>'
+  f'<circle cx="310" cy="320" r="{HERO_R - 11}" fill="none" stroke="{RULE}" stroke-width="1"/>'
+  f'<circle cx="310" cy="320" r="{HERO_DISP:.1f}" fill="{SOLIDS[100]}" stroke="{INK}" stroke-width="1"/>'
+  f'<g transform="translate(310 320) scale({HERO_DISP / 119:.4f})" text-anchor="middle" '
+  f'font-family="Manrope, Archivo, system-ui, sans-serif">{SCREEN.replace("__ID__", "h")}</g>'
+  f'<rect x="{310 + HERO_R - 6}" y="352" width="16" height="34" rx="3" fill="{SOLIDS[0]}" stroke="{INK}" stroke-width="1.4"/>'
+  '</svg>')
+
 open("assembly.svg.part", "w").write(svg)
 # where the stacked object sits inside the 2100 × 1000 box, and how big its face is, so the
 # page can put it exactly where the hero pendant used to be
@@ -371,6 +399,7 @@ APP = "app/src/generated"
 if os.path.isdir(os.path.dirname(APP)):
     os.makedirs(APP, exist_ok=True)
     open(APP + "/assembly.svg", "w").write(svg)
+    open(APP + "/hero.svg", "w").write(hero)
     shutil.copyfile("assembly.json", APP + "/assembly.json")
     # the two numbers the keyframes need before any script runs
     open(APP + "/geo.css", "w").write(
