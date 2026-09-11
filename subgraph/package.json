@@ -5,10 +5,13 @@
   "scripts": {
     "codegen": "graph codegen",
     "build": "graph build",
-    "deploy": "graph deploy amulet-decisions"
+    "deploy": "graph deploy amulet-decisions",
+    "test": "graph test"
   },
   "devDependencies": {
     "@graphprotocol/graph-cli": "0.97.1",
-    "@graphprotocol/graph-ts": "0.38.1"
+    "@graphprotocol/graph-ts": "0.38.1",
+    "assemblyscript": "0.19.23",
+    "matchstick-as": "0.6.0"
   }
 }

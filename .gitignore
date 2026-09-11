@@ -42,3 +42,7 @@ web/__pycache__/
 web/app/node_modules/
 web/app/dist/
 web/app/tsconfig.tsbuildinfo
+
+# matchstick
+subgraph/tests/.latest.json
+subgraph/tests/.bin/

@@ -14,6 +14,12 @@ importers:
       '@graphprotocol/graph-ts':
         specifier: 0.38.1
         version: 0.38.1
+      assemblyscript:
+        specifier: 0.19.23
+        version: 0.19.23
+      matchstick-as:
+        specifier: 0.6.0
+        version: 0.6.0
 
 packages:
 
@@ -1237,6 +1243,9 @@ packages:
   main-event@1.0.5:
     resolution: {integrity: sha512-4l9z8r7Q446mhhVTwdHmfPksOYBwN2xa7ewEW2yxPVNQapIaAf57ORFLMB91SpMEMa4wXowect7fq3uMLjDnGA==}
 
+  matchstick-as@0.6.0:
+    resolution: {integrity: sha512-E36fWsC1AbCkBFt05VsDDRoFvGSdcZg6oZJrtIe/YDBbuFh8SKbR5FcoqDhNWqSN+F7bN/iS2u8Md0SM+4pUpw==}
+
   math-intrinsics@1.1.0:
     resolution: {integrity: sha512-/IXtbwEk5HTPyEwyKX6hGkYXxM9nbj64B+ilVJnC/R6B0pH5G4V3b0pVbL7DBj4tkhBAppbQUlf6F6Xl9LHu1g==}
     engines: {node: '>= 0.4'}
@@ -1633,6 +1642,10 @@ packages:
   uuid@8.3.2:
     resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
     deprecated: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+    hasBin: true
+
+  wabt@1.0.24:
+    resolution: {integrity: sha512-8l7sIOd3i5GWfTWciPL0+ff/FK/deVK2Q6FN+MPz4vfUcD78i2M/49XJTwF6aml91uIiuXJEsLKWMB2cw/mtKg==}
     hasBin: true
 
   wcwidth@1.0.1:
@@ -3015,6 +3028,10 @@ snapshots:
 
   main-event@1.0.5: {}
 
+  matchstick-as@0.6.0:
+    dependencies:
+      wabt: 1.0.24
+
   math-intrinsics@1.1.0: {}
 
   merge-options@3.0.4:
@@ -3390,6 +3407,8 @@ snapshots:
       which-typed-array: 1.1.22
 
   uuid@8.3.2: {}
+
+  wabt@1.0.24: {}
 
   wcwidth@1.0.1:
     dependencies:
