@@ -249,28 +249,19 @@ export function correctable(reason: string): boolean {
   return /over its own cap|not one it may touch|unknown action|is not a number|amount is zero|too small/.test(reason);
 }
 
-export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Decider {
-  const client = new BedrockRuntimeClient({ region });
+// The conversation with the model, with the transport left out. Everything that decides what
+// to do with an answer lives here; the only thing Bedrock supplies is the text. Keeping the
+// two apart is what makes the retry testable without a network.
+export type Ask = (system: string, messages: Turn[]) => Promise<string>;
+export type Turn = { role: "user" | "assistant"; content: { text: string }[] };
+
+export function deciderFrom(ask: Ask): Decider {
   return {
     async decide(p, market, policy, mandate, ev, hist, lastRefusal, priceNote, spendable) {
       const { system, user } = brief(p, market, policy, mandate, ev, hist, lastRefusal, priceNote, spendable);
-      const ask = async (messages: { role: "user" | "assistant"; content: { text: string }[] }[]) => {
-        const res = await client.send(
-          new ConverseCommand({
-            modelId: NOVA_MODEL,
-            system: [{ text: system }],
-            messages,
-            inferenceConfig: { maxTokens: 220, temperature: 0.2 },
-          }),
-          { abortSignal: AbortSignal.timeout(timeoutMs) },
-        );
-        return res.output?.message?.content?.map((b) => b.text ?? "").join("") ?? "";
-      };
       try {
-        const messages: { role: "user" | "assistant"; content: { text: string }[] }[] = [
-          { role: "user", content: [{ text: user }] },
-        ];
-        const text = await ask(messages);
+        const messages: Turn[] = [{ role: "user", content: [{ text: user }] }];
+        const text = await ask(system, messages);
         const d = parseDecision(text);
         if (!d) return { reason: `unreadable answer: ${text.replace(/\s+/g, " ").slice(0, 140)}`, source: "rules" };
         const v = validate(d, p, market, policy, spendable);
@@ -290,7 +281,7 @@ export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Dec
               "Answer once more with something inside them, or stand down.",
           }],
         });
-        const text2 = await ask(messages);
+        const text2 = await ask(system, messages);
         const d2 = parseDecision(text2);
         if (!d2) {
           return { decision: d, reason: `${v.reason}; its second answer was unreadable`, source: "rules", attempts: 2, firstTry: v.reason };
@@ -309,4 +300,20 @@ export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Dec
       }
     },
   };
+}
+
+export function makeNovaDecider(region: string, timeoutMs = LLM_TIMEOUT_MS): Decider {
+  const client = new BedrockRuntimeClient({ region });
+  return deciderFrom(async (system, messages) => {
+    const res = await client.send(
+      new ConverseCommand({
+        modelId: NOVA_MODEL,
+        system: [{ text: system }],
+        messages,
+        inferenceConfig: { maxTokens: 220, temperature: 0.2 },
+      }),
+      { abortSignal: AbortSignal.timeout(timeoutMs) },
+    );
+    return res.output?.message?.content?.map((b) => b.text ?? "").join("") ?? "";
+  });
 }
