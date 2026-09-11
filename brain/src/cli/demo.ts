@@ -8,7 +8,7 @@ import { accountNonce, makeRelayer, type Relayer } from "../chain/account712.js"
 import { proposalIdBytes32 } from "../engine/proposal.js";
 import type { Recorder } from "../chain/amuletlog.js";
 import { assembleOptions, pickCandidate } from "../engine/options.js";
-import { withinPolicy } from "../engine/policy.js";
+import { agentPolicy, withinPolicy } from "../engine/policy.js";
 import { buildSwap, quoteSwap, type Side } from "../tx/swap.js";
 import { readRecords } from "../ens/resolver.js";
 import type { Candidate } from "../engine/rules.js";
@@ -189,14 +189,14 @@ export async function swapAsk(d: DemoDeps, from: Side, to: Side, amountIn: bigin
   const expiresAt = Math.floor(Date.now() / 1000) + 600;
   const pv = withinPolicy(
     { chainId: d.dep.chainId, to: built.to, value: built.value, data: built.data, gas: 200_000, expiresAt },
-    d.policy,
+    agentPolicy("swap", d.dep),
   );
   if (!pv.ok) { d.log(`  the policy refuses it: ${pv.reason}`); return; }
   wrist(d);
   const id = ulid();
   d.log(`  proposing: ${built.human}`);
   d.pendant.send({
-    type: "proposal", id, agent: AGENTS.yield.label, tier: 2, action: "SWAP",
+    type: "proposal", id, agent: AGENTS.swap.label, tier: 2, action: "SWAP",
     human: built.human, rationale: built.rationale,
     tx: { chainId: d.dep.chainId, to: built.to, value: toHex(built.value), data: built.data,
           nonce: 0, maxFeePerGas: toHex(0n), maxPriorityFeePerGas: toHex(0n), gas: 200_000 },
@@ -204,7 +204,7 @@ export async function swapAsk(d: DemoDeps, from: Side, to: Side, amountIn: bigin
   });
   const decision = await d.pendant.awaitDecision(id, 300_000);
   d.log(`  the wrist said: ${decision.result}`);
-  await note(d, id, AGENTS.yield.label, built.to, built.value, decision.result);
+  await note(d, id, AGENTS.swap.label, built.to, built.value, decision.result);
 }
 
 export const MENU = `

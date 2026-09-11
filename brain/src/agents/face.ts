@@ -12,6 +12,28 @@ export interface Face {
 // Hand-drawn so each one reads at a glance on a 32 mm screen: a shield that guards, an arrow
 // that pays down, a sprout that looks for yield.
 export const FACES: Record<string, Face> = {
+  // Two arrows passing each other: the one agent you summon rather than wait for.
+  swap: {
+    colour: "2f9ec4",
+    rows: [
+      "................",
+      "................",
+      "................",
+      ".........#......",
+      "..#########.....",
+      "..##########....",
+      "..#########.....",
+      ".........#......",
+      "................",
+      "................",
+      ".....#..........",
+      "....#########...",
+      "...##########...",
+      "....#########...",
+      ".....#..........",
+      "................",
+    ],
+  },
   // A little guard robot: an antenna, two eyes punched out of the head, a mouth slot, feet.
   repay: {
     colour: "2f9e44",

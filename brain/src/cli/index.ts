@@ -516,7 +516,7 @@ ens.command("setup").description("register the name, deploy resolver + subregist
     await showEns(sepoliaClient(requireSecret(s, "SEPOLIA_RPC_URL")));
   });
 ens.command("agent").description("give an agent its own name, its own limits and its own face")
-  .argument("[label]", "repay | yield | all", "all")
+  .argument("[label]", "repay | yield | swap | all", "all")
   .action(async (label: string) => {
     const s = await loadSecrets();
     const dep = loadDeployments();
