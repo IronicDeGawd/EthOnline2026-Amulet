@@ -144,7 +144,7 @@ html = '''<!doctype html>
 
 <header class="top">
   <div class="shell">
-    <a class="wordmark" href="/" aria-label="Amulet, home">
+    <a class="wordmark" href="./" aria-label="Amulet, home">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none">
         <circle cx="12" cy="12" r="10" stroke="#14181c" stroke-width="1.6"/>
         <circle cx="12" cy="12" r="5.4" stroke="#b8901f" stroke-width="1.6"/>
