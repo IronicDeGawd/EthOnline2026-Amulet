@@ -38,7 +38,7 @@ import { defaultPolicy } from "../engine/policy.js";
 import { makeNovaExplainer, templateExplainer } from "../engine/llm.js";
 import { makeNovaDecider } from "../engine/decide.js";
 import { AMULET_SUBGRAPH, fetchHistory } from "../data/graph/history.js";
-import { formatQuote, readEthUsd, syncSimPrice } from "../chain/oracle.js";
+import { formatQuote, readEthUsd, syncSimPrice, maySync } from "../chain/oracle.js";
 import { portfolioMessage, readPortfolio } from "../chain/portfolio.js";
 import { PendantLink } from "../pendant/ws.js";
 import { Brain, type Simulation } from "../brain.js";
@@ -269,7 +269,7 @@ program.command("oracle").description("read Chainlink ETH/USD; --sync points the
     const q = await readEthUsd(sepolia);
     log(formatQuote(q));
     if (q.stale) log("the feed has not updated in a day — not syncing anything to it");
-    if (!o.sync || q.stale) return;
+    if (!maySync(q, Boolean(o.sync))) return;
     const signer = signerFromKey(rpc, deployerKey(s, log));
     for (const sim of [dep.simA, dep.simB]) {
       const before = await readPosition(sepolia, sim, dep.amuletAccount ?? LEDGER_ADDRESS);

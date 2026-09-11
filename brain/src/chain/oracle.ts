@@ -55,6 +55,12 @@ export function formatQuote(q: Quote): string {
   return `${q.description} $${usd} (updated ${age} ago${q.stale ? ", STALE" : ""}) from ${q.feed.slice(0, 10)}…`;
 }
 
+// A stale feed is not a price. Writing one into the sims would move every health factor in
+// the demo on a number nobody is maintaining, so --sync refuses rather than warns.
+export function maySync(q: Quote, wantSync: boolean): boolean {
+  return wantSync && !q.stale;
+}
+
 // Points the sim at the real price. The sim is still a sim — but its price is no longer ours.
 export async function syncSimPrice(
   wallet: WalletClient, account: Account, sim: `0x${string}`, price: bigint,
