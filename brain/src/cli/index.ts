@@ -157,7 +157,7 @@ async function boot(opts: { llm: boolean; port: number; simulate?: string; once?
   await pendant.listen(opts.port, "0.0.0.0", wsToken);
   pendant.on("refused", (who) => log(`refused a connection from ${who}: no token`));
   log(`listening on ws://${lanIp()}:${opts.port} (firmware AMULET_WSS_URL)${wsToken ? ", token required" : ", OPEN — set PENDANT_TOKEN before exposing this"}`);
-  log(`guarding ${LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
+  log(`guarding ${relayer && dep.amuletAccount ? dep.amuletAccount : LEDGER_ADDRESS} on ${dep.simA}; log key ${recorder?.address ?? "none"}; explainer ${opts.llm ? "nova-lite" : "template"}`);
   log(decider ? `${AGENTS[agent].title} decides with nova-lite; the rules answer when it cannot` : "decisions come from the rules only");
   const simulate = (await parseSimulate(opts.simulate, dep, rpc, () => deployerKey(s, log))) ?? (opts.deployment ? { pinDeployment: opts.deployment } : undefined);
   // The pendant does not only listen. Its swap screen and its holdings screen ask the agent for
@@ -291,9 +291,18 @@ program.command("status").description("one round of reads, no pendant").action(a
   const fresh = checkFreshness("aaveV3", lending.meta, head, lending.queriedAt);
   const weth = pickMarket(lending.markets, "WETH");
   console.log(JSON.stringify({ head, fresh, weth }, null, 2));
+  // Two addresses can hold a position and only one of them is the one the agent watches.
+  // Printing only the Ledger's hid an empty account for a day: the brain guards whatever
+  // the Ledger's signature can move, which is the account whenever there is a relayer.
+  const watched = dep.amuletAccount ?? LEDGER_ADDRESS;
   for (const sim of [dep.simA, dep.simB]) {
-    const p = await readPosition(sepolia, sim, LEDGER_ADDRESS);
-    console.log(`${p.name}: HF ${p.healthFactor} coll ${p.collateralWei} wei debt ${p.debtUnits} price ${p.price}`);
+    for (const [who, addr] of [["account", dep.amuletAccount], ["Ledger", LEDGER_ADDRESS]] as const) {
+      if (!addr) continue;
+      const p = await readPosition(sepolia, sim, addr);
+      const mark = addr.toLowerCase() === watched.toLowerCase() ? " <- the agent watches this" : "";
+      console.log(`${p.name} ${who} ${addr}: HF ${p.healthFactor} coll ${p.collateralWei} wei ` +
+                  `debt ${p.debtUnits} price ${p.price}${mark}`);
+    }
   }
 });
 

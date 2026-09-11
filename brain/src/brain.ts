@@ -196,7 +196,9 @@ export class Brain {
 
     // 2. Position. With typed-data signing on, the position the agent guards is the one the
     // account holds — that is what the Ledger's signature can move.
-    let pos = await readPosition(d.sepolia, d.dep.simA, this.guarded());
+    const watching = this.guarded();
+    if (this.ticks === 0) d.log(`watching ${watching} on ${d.dep.simA}`);
+    let pos = await readPosition(d.sepolia, d.dep.simA, watching);
     if (d.simulate?.hf && Number.isFinite(pos.healthFactor)) pos = fakeHf(pos, d.simulate.hf);
 
     const past = d.simulate?.utilSpike && weth
