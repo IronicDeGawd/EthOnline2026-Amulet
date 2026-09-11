@@ -36,3 +36,4 @@ tools/propose/__pycache__/
 subgraph/generated/
 subgraph/build/
 subgraph/node_modules/
+web/__pycache__/

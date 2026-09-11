@@ -9,6 +9,21 @@ K  = 0.34                                  # foreshortening of the in-face depth
 O  = (760.0, 230.0)                        # axis origin
 S  = 7.0                                   # px per mm
 
+# The object is solid before the reader opens it. Only the front face of each part carries a
+# colour; the page fades it out as the parts separate, so the same drawing arrives as line work.
+# The object is solid before the reader opens it. The silhouettes that already occlude the parts
+# behind carry that colour; the page fades them back to paper as the parts separate, so the same
+# drawing becomes line work without a second drawing existing anywhere.
+SOLIDS = {
+    0:   "#2b3138",   # cover glass, dark and slightly reflective
+    100: "#161a1e",   # the display itself, nearly black
+    215: "#2f5d50",   # carrier board, board green
+    320: "#242a30",   # the module under its shield can
+    395: "#b8901f",   # antenna, copper
+    470: "#2f5d50",   # haptic circuit, the same board green
+    560: "#9aa2a8",   # battery, brushed silver
+}
+
 def at(s):  return (O[0] + s*D[0], O[1] + s*D[1])
 def f2s(C, u, v):  return (C[0] + u*P[0] + v*K*D[0], C[1] + u*P[1] + v*K*D[1])
 def off(C, t):     return (C[0] + t*D[0], C[1] + t*D[1])
@@ -55,24 +70,30 @@ def fcirc(C, u, v, r, stroke=INK2, wd=1.0):
 def fline(C, u1, v1, u2, v2, stroke=INK2, wd=1.0):
     return f'<path d="M{fmt(f2s(C,u1,v1))} L{fmt(f2s(C,u2,v2))}" stroke="{stroke}" stroke-width="{wd}"/>'
 
-def cyl_fill(C, R, th, ry=None):
+PART = 0   # which part is being drawn; its colour is the one the silhouettes carry
+
+def cyl_fill(C, R, th, ry=None, tint=None):
     """opaque silhouette of an oblique cylinder, so nearer parts occlude farther ones"""
     B = off(C, th); rv = R if ry is None else ry
     a, b   = f2s(C, R, 0), f2s(C, -R, 0)
     a2, b2 = f2s(B, R, 0), f2s(B, -R, 0)
-    return (f'<path d="{ell(C,R,ry=rv)}" fill="{PAPER}" stroke="none"/>'
-            f'<path d="{ell(B,R,ry=rv)}" fill="{PAPER}" stroke="none"/>'
-            f'<path d="M{fmt(a)} L{fmt(a2)} L{fmt(b2)} L{fmt(b)} Z" fill="{PAPER}" stroke="none"/>')
+    t = tint or SOLIDS.get(PART)
+    k = f'class="solid" style="--tint:{t}"' if t else ""
+    return (f'<path d="{ell(C,R,ry=rv)}" fill="{PAPER}" stroke="none" {k}/>'
+            f'<path d="{ell(B,R,ry=rv)}" fill="{PAPER}" stroke="none" {k}/>'
+            f'<path d="M{fmt(a)} L{fmt(a2)} L{fmt(b2)} L{fmt(b)} Z" fill="{PAPER}" stroke="none" {k}/>')
 
-def slab_fill(C, w_, h_, th):
+def slab_fill(C, w_, h_, th, tint=None):
     B = off(C, th)
     c = [f2s(C,-w_/2,-h_/2), f2s(C,w_/2,-h_/2), f2s(C,w_/2,h_/2), f2s(C,-w_/2,h_/2)]
     b = [f2s(B,-w_/2,-h_/2), f2s(B,w_/2,-h_/2), f2s(B,w_/2,h_/2), f2s(B,-w_/2,h_/2)]
+    t = tint or SOLIDS.get(PART)
+    k = f'class="solid" style="--tint:{t}"' if t else ""
     q = c + [b[1], b[2], b[3]]
-    return (f'<path d="M{fmt(c[0])} L{fmt(c[1])} L{fmt(c[2])} L{fmt(c[3])} Z" fill="{PAPER}" stroke="none"/>'
-            f'<path d="M{fmt(b[0])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(b[3])} Z" fill="{PAPER}" stroke="none"/>'
-            f'<path d="M{fmt(c[1])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(c[2])} Z" fill="{PAPER}" stroke="none"/>'
-            f'<path d="M{fmt(c[2])} L{fmt(b[2])} L{fmt(b[3])} L{fmt(c[3])} Z" fill="{PAPER}" stroke="none"/>')
+    return (f'<path d="M{fmt(c[0])} L{fmt(c[1])} L{fmt(c[2])} L{fmt(c[3])} Z" fill="{PAPER}" stroke="none" {k}/>'
+            f'<path d="M{fmt(b[0])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(b[3])} Z" fill="{PAPER}" stroke="none" {k}/>'
+            f'<path d="M{fmt(c[1])} L{fmt(b[1])} L{fmt(b[2])} L{fmt(c[2])} Z" fill="{PAPER}" stroke="none" {k}/>'
+            f'<path d="M{fmt(c[2])} L{fmt(b[2])} L{fmt(b[3])} L{fmt(c[3])} Z" fill="{PAPER}" stroke="none" {k}/>')
 
 def knurl(C, R, th, n=110, depth=9):
     """machined ridges around a rim"""
@@ -92,6 +113,7 @@ def seal(sv):
     g.clear()
 
 # ---- 1 · cover glass -------------------------------------------------------
+PART = 0
 C1 = at(0); R1 = 19.5*S
 g.append(cyl_fill(C1, R1, 9))
 g.append(knurl(C1, R1, 9))
@@ -102,6 +124,7 @@ g.append(f'<path d="{ell(C1, R1-40, 200, 320, 40, False)}" stroke="{RULE}" strok
 
 seal(0)
 # ---- 2 · display panel ----------------------------------------------------
+PART = 100
 C2 = at(100); R2 = 17*S
 g.append(cyl_fill(C2, R2, 17))
 g.append(cyl(C2, R2, 17))
@@ -126,6 +149,7 @@ for i in range(7):
 
 seal(100)
 # ---- 3 · carrier board ----------------------------------------------------
+PART = 215
 C3 = at(215); R3 = 19.5*S
 g.append(cyl_fill(C3, R3, 12))
 g.append(cyl(C3, R3, 12))
@@ -161,6 +185,7 @@ g.append(frect(C3, 83, 86, 11, 13, INK2))
 
 seal(215)
 # ---- 4 · XIAO module ------------------------------------------------------
+PART = 320
 C4 = at(320); W4, H4 = 21*S, 17.8*S
 g.append(slab_fill(C4, W4, H4, 21))
 g.append(slab(C4, W4, H4, 21))
@@ -190,6 +215,7 @@ for i in range(7):
 
 seal(320)
 # ---- 5 · antenna ----------------------------------------------------------
+PART = 395
 C5 = at(395)
 g.append(slab_fill(C5, 204, 28, 14))
 b1 = f2s(C5, -108, -14); b2 = f2s(C5, 96, -14)
@@ -205,6 +231,7 @@ g.append(fcirc(C5, 146, 0, 5, INK2))
 
 seal(395)
 # ---- 6 · haptic circuit ---------------------------------------------------
+PART = 470
 C6 = at(470)
 M = f2s(C6, -96, 0)
 g.append(cyl_fill(M, 5*S, 19))
@@ -232,6 +259,7 @@ for u in (86, 96, 106, 124):
 
 seal(470)
 # ---- 7 · battery ----------------------------------------------------------
+PART = 560
 C7 = at(560); W7, H7 = 35*S, 30*S
 g.append(slab_fill(C7, W7, H7, 35))
 g.append(slab(C7, W7, H7, 35))
@@ -247,7 +275,12 @@ g.append(f'<path d="M{fmt((jc[0]-24,jc[1]-14))} L{fmt((jc[0]+24,jc[1]-14))} L{fm
 
 seal(560)
 # ---- axis ------------------------------------------------------------------
-body = "".join(sv for _, sv in sorted(groups, key=lambda t: -t[0]))
+# Each part carries the distance it travels along the axis, so the page can draw the object
+# stacked and let the scroll open it. At t=1 every group sits exactly where it does here, which
+# is what makes the animation the same drawing rather than a second one.
+body = "".join(
+    f'<g class="part" data-s="{sv:.0f}" style="--dx:{sv*D[0]:.1f}px;--dy:{sv*D[1]:.1f}px">{body_}</g>'
+    for sv, body_ in sorted(groups, key=lambda t: -t[0]))
 axis = (f'<path d="M{fmt(off(O,-60))} L{fmt(off(O,660))}" stroke="{INK2}" '
         f'stroke-width="1" stroke-opacity="0.4" stroke-dasharray="2 10"/>')
 

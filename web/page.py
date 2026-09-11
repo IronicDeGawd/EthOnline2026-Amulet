@@ -69,7 +69,50 @@ html = '''<!doctype html>
   .object .titling { position: absolute; top: 56px; left: 64px; max-width: 34ch; z-index: 1; }
   .object h2 { margin: 0 0 14px; font-size: clamp(30px, 3.1vw, 44px); line-height: 1.06; font-weight: 700; letter-spacing: -0.03em; }
   .object p { margin: 0; font-size: 17px; color: var(--ink-2); }
-  svg.assembly { display: block; width: 100%; height: auto; }
+  svg.assembly { display: block; width: 100%; height: auto; overflow: visible; }
+
+/* ---- the object opens as you scroll ----------------------------------------------------
+   One drawing, three things happening at once: it leans back from face-on, its seven parts
+   slide apart along the axis they were drawn on, and the colour drains out of them until only
+   the line work is left. Nothing is swapped for anything else.
+   The timeline is the stage's own pinned window, not the page: bound to the document, a reader
+   would only ever see the middle of it. */
+.stage { height: 320vh; position: relative; view-timeline-name: --opening; }
+.pin { position: sticky; top: 0; min-height: 100vh; display: grid; place-items: center;
+       perspective: 2200px; }
+.tilt { width: 100%; transform-origin: 50% 42%; }
+.assembly .part { transform-box: fill-box; }
+
+@keyframes lean  { from { transform: perspective(2200px) rotateX(0deg) scale(1.12); }
+                   to   { transform: perspective(2200px) rotateX(0deg) scale(1); } }
+@keyframes apart { from { transform: translate(calc(-1 * var(--dx)), calc(-1 * var(--dy))); }
+                   to   { transform: translate(0, 0); } }
+@keyframes drain { from { fill: var(--tint); }
+                   to   { fill: #e2e4e2; } }
+@keyframes ink   { from { stroke-opacity: 0.25; }
+                   to   { stroke-opacity: 1; } }
+@keyframes namein{ from { opacity: 0; } to { opacity: 1; } }
+
+@supports (animation-timeline: view()) {
+  .tilt, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path, svg.assembly .callouts {
+    animation-timeline: --opening;
+    animation-range: contain 0% contain 92%;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+  }
+  .tilt { animation-name: lean; }
+  .assembly .part { animation-name: apart; }
+  .assembly .solid { animation-name: drain; }
+  .assembly g[stroke-linejoin] path { animation-name: ink; }
+  svg.assembly .callouts { animation-name: namein; animation-range: contain 78% contain 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage { height: auto; }
+  .pin { position: static; min-height: 0; }
+  .tilt, .assembly .part, .assembly .solid, .assembly g[stroke-linejoin] path { animation: none; }
+  .assembly .solid { fill: #e2e4e2; }
+}
   svg.assembly .lbl { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 19px; fill: var(--ink-2); }
   .object .corner {
     position: absolute; right: 4%; bottom: 7%; width: 33%; max-width: 520px;
@@ -219,7 +262,9 @@ html = '''<!doctype html>
       <h2>Seven parts, one job</h2>
       <p>Every piece drawn to scale from the hardware on the bench. Nothing here can sign; the Ledger is a separate device the pendant only talks to.</p>
     </div>
-    <div class="figwrap">__ASSEMBLY__</div>
+    <div class="stage">
+      <div class="pin"><div class="tilt"><div class="figwrap">__ASSEMBLY__</div></div></div>
+    </div>
     <div class="corner">
       <div class="scale">
         <svg width="150" height="16" fill="none" stroke="#4a545c" stroke-width="1" aria-hidden="true">
