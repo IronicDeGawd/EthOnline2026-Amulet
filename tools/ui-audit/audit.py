@@ -80,7 +80,7 @@ ITEMS = [
     ("RESULT", "picked detail", "manrope_500_13", 158, 35, 170, "DOT2", ["Compound - asking the agent"]),
     ("AGENT", "name", "manrope_700_20", 116, None, 240, "CLIP", ["repay", "yield", "guardian"]),
     ("AGENT", "parent", "manrope_500_13", 144, None, 240, "CLIP", ["amuletguard.eth"]),
-    ("AGENT", "hint", "manrope_500_13", 178, None, 240, "CLIP", ["Tap to see the request"]),
+    ("AGENT", "hint", "manrope_500_13", 178, None, 240, "CLIP", ["Tap to see the request", "opening..."]),
     ("PAIRING", "line1", "manrope_700_20", 58, None, 240, "CLIP", ["Same code on"]),
     ("PAIRING", "line2", "manrope_700_20", 82, None, 240, "CLIP", ["your Nano X?"]),
     ("PAIRING", "code", "manrope_800_36", 118, None, 240, "CLIP", ["888 888"]),

@@ -657,7 +657,15 @@ void app_main(void)
         }
         if (ui_state() == UI_AGENT) {
             if (ui_take_tap()) {
+                // Put the request on screen first. Finding the Ledger takes seconds and blocks
+                // this task, so doing it before the tap is handled makes the face screen feel
+                // dead and invites a second tap. The hold arms itself when the link answers.
                 ui_show_proposal(&s_pending);
+                if (!st.ledger && bonded && s_pending.tier >= 2) {
+                    bool led = ledger_link_ensure(8000, NULL);
+                    if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
+                    if (led) ledger_used_ms = (uint32_t)(esp_timer_get_time() / 1000);
+                }
             } else if (ui_take_reject()) {
                 send_decision(s_pending.id, "rejected", NULL);
                 ui_show_dismissed(false);
@@ -770,14 +778,7 @@ void app_main(void)
                 ui_attention(s_pending.tier >= 2 ? 3 : (s_pending.tier == 1 ? 2 : 1));
                 if (ag && ag->has_face) ui_show_agent(ag);
                 else ui_show_proposal(&s_pending);
-                // Go and wake the Ledger now, while the wearer is still reading the face. By
-                // the time they have tapped through to the amount the link is usually up, and
-                // the hold arms itself the moment it answers.
-                if (!st.ledger && bonded && s_pending.tier >= 2) {
-                    bool led = ledger_link_ensure(8000, NULL);
-                    if (led != st.ledger) { st.ledger = led; ui_set_status(&st); }
-                    if (led) ledger_used_ms = (uint32_t)(esp_timer_get_time() / 1000);
-                }
+
             }
         }
 

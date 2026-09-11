@@ -1220,7 +1220,15 @@ static void paint_face(lv_obj_t *parent, const agent_t *a, int px, int x0, int y
     (void)parent;
 }
 
-static void agent_tap(const lv_point_t *at) { (void)at; s_tap = true; }
+// Answer the finger at once. The main task may spend seconds finding the Ledger before this
+// screen gives way, and a screen that looks asleep gets tapped again and again.
+static void agent_tap(const lv_point_t *at)
+{
+    (void)at;
+    if (s_tap) return;                  // already on its way; a second tap changes nothing
+    s_tap = true;
+    if (s_ag_hint) lv_label_set_text(s_ag_hint, "opening...");
+}
 
 bool ui_take_tap(void) { bool t = s_tap; s_tap = false; return t; }
 
@@ -1249,6 +1257,7 @@ void ui_show_agent(const agent_t *a)
     if (!display_ready() || !s_ag_name || !lvgl_port_lock(200)) { s_state = UI_AGENT; return; }
     paint_face(NULL, a, FACE_BIG_PX / FACE_PX, (240 - FACE_BIG_PX) / 2, 42);
     lv_label_set_text(s_ag_name, a ? a->label : "unknown agent");
+    lv_label_set_text(s_ag_hint, "Tap to see the request");
     show(s_ag_hint, true);
     s_press_counts = s_hold_done = s_hold_view = false;
     s_shown_at = lv_tick_get();
