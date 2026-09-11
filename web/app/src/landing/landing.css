@@ -26,7 +26,12 @@
   /* The pendant reads as belonging to the headline, so it is seated between the
      headline's centre and the column's. useSeat.ts moves the drawn one by the same
      amount, so the static and animated pendants land in the same place. */
-  figure.device { margin: 0; transform: translateY(-76px); }
+  /* The drawing is 620 wide for 560 tall. Capping it against the window's height is what
+     keeps the whole hero on one screen: on a short laptop window the pendant used to be
+     taller than the words beside it, which both opened a gap above the headline and pushed
+     the buttons off the bottom. */
+  figure.device { margin: 0 0 0 auto; transform: translateY(-76px);
+                  max-width: min(100%, calc((100vh - 300px) * 1.107)); }
   figure.device svg { display: block; width: 100%; height: auto; }
   figure.device .facewrap { display: block; }
   figcaption { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--rule);
@@ -47,11 +52,24 @@
   }
   .partlist { display: none; }
 
+/* A short window has no room for the full breathing space above and below the hero. */
+@media (max-height: 860px) {
+    .hero .shell { padding-top: 56px; padding-bottom: 56px; }
+}
+/* Shorter still and the words themselves must give way, or the two buttons fall off the
+   bottom of the first screen and nobody finds them. */
+@media (min-width: 1001px) and (max-height: 780px) {
+    .hero .shell { padding-top: 40px; padding-bottom: 40px; }
+    .hero h1 { font-size: clamp(34px, 4.2vw, 52px); margin-bottom: 18px; }
+    .hero .lede { font-size: 17px; margin-bottom: 14px; }
+    .hero .btns { margin-top: 22px; }
+    figure.device figcaption { display: none; }
+}
 @media (max-width: 1000px) {
     .shell { padding: 0 24px; }
     .top .shell { padding-left: 24px; padding-right: 24px; }
     .hero .shell { gap: 40px; padding-top: 56px; padding-bottom: 64px; }
-    figure.device { transform: none; }
+    figure.device { transform: none; max-width: 100%; margin: 0; }
     .top nav { gap: 20px; font-size: 14px; }
     .top nav a[data-secondary] { display: none; }
 }
