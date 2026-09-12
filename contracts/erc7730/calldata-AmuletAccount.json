@@ -1,0 +1,149 @@
+{
+  "$schema": "https://github.com/LedgerHQ/clear-signing-erc7730-registry/raw/master/specs/erc7730-v1.schema.json",
+  "context": {
+    "$id": "AmuletAccount",
+    "contract": {
+      "deployments": [
+        {
+          "chainId": 11155111,
+          "address": "0xea49e49df36de1ac200e588e9b312cf479714123"
+        }
+      ],
+      "abi": [
+        {
+          "type": "function",
+          "name": "execute",
+          "inputs": [
+            {
+              "name": "summary",
+              "type": "string"
+            },
+            {
+              "name": "action",
+              "type": "string"
+            },
+            {
+              "name": "market",
+              "type": "address"
+            },
+            {
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "name": "deadline",
+              "type": "uint256"
+            },
+            {
+              "name": "signature",
+              "type": "bytes"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "sweep",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "owner": "Amulet",
+    "info": {
+      "legalName": "Amulet (ETHOnline 2026)",
+      "url": "https://amulet-ethonline.vercel.app"
+    },
+    "constants": {
+      "simA": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
+      "simB": "0xaab73d09E659A0F1898e19fBdD294371044DD524"
+    }
+  },
+  "display": {
+    "formats": {
+      "execute(string,string,address,uint256,uint256,bytes)": {
+        "intent": "Carry a signed intent",
+        "fields": [
+          {
+            "label": "Wearer approved",
+            "format": "raw",
+            "path": "#.summary"
+          },
+          {
+            "label": "Action",
+            "format": "raw",
+            "path": "#.action"
+          },
+          {
+            "label": "Market",
+            "format": "addressName",
+            "params": {
+              "types": [
+                "contract"
+              ],
+              "sources": [
+                "local"
+              ]
+            },
+            "path": "#.market"
+          },
+          {
+            "label": "Amount",
+            "format": "amount",
+            "path": "#.amount"
+          },
+          {
+            "label": "Valid until",
+            "format": "date",
+            "params": {
+              "encoding": "timestamp"
+            },
+            "path": "#.deadline"
+          }
+        ],
+        "required": [
+          "#.summary",
+          "#.action",
+          "#.market",
+          "#.amount",
+          "#.deadline"
+        ],
+        "excluded": [
+          "#.signature"
+        ]
+      },
+      "sweep(address)": {
+        "intent": "Sweep the balance",
+        "fields": [
+          {
+            "label": "To",
+            "format": "addressName",
+            "params": {
+              "types": [
+                "eoa",
+                "wallet"
+              ],
+              "sources": [
+                "local"
+              ]
+            },
+            "path": "#.to"
+          }
+        ],
+        "required": [
+          "#.to"
+        ],
+        "excluded": []
+      }
+    }
+  }
+}

@@ -30,6 +30,31 @@ your ENS name, and the Ledger shows you the same sentence the pendant did before
 Two screens have to agree. A phone can show you one thing and send another; the Ledger
 decodes the intent itself, on a screen wired to the chip that holds the key.
 
+## Clear signing: typed data, and the ERC-7730 descriptors
+
+Two ways to make a Nano X show words instead of bytes, and Amulet uses both.
+
+**Typed data is the path the demo takes.** The pendant builds an EIP-712 `Action` — summary,
+action, market, amount, nonce, deadline — and the Ethereum app renders each field on its own
+screen with no descriptor at all, because the structure is in the message. This is why the
+Ledger shows *Repay 0.006 ETH on Sim-A* the moment the pendant does, and why the account
+contract verifies the signature over exactly those fields. The trade is that the account must
+exist: the Ledger signs an intent, not a transaction, and a relayer carries it.
+
+**ERC-7730 descriptors cover the other path.** `amulet run --raw` blind-signs the calldata
+directly; a wallet that has the descriptor shows it in words instead. They also describe the
+account's own `execute()` for anyone reading it in a wallet later. Both files pass Ledger's own
+`erc7730 lint`, and every selector is cross-checked against the deployment:
+
+| descriptor | covers |
+|---|---|
+| [`contracts/erc7730/calldata-AmuletAccount.json`](../contracts/erc7730/calldata-AmuletAccount.json) | `execute(summary, action, market, amount, deadline, signature)` and `sweep(to)` |
+| [`contracts/erc7730/calldata-PositionSim.json`](../contracts/erc7730/calldata-PositionSim.json) | `supply()`, `repay()`, `withdraw(amount)`, `borrow(amount)` on both sims |
+
+The labels are within the device's limits — 30 characters for an intent, 20 for a label —
+because the linter says anything longer is truncated on screen, and a truncated label is the
+blind signing the format exists to prevent.
+
 ## What was found along the way
 
 Porting the transport to a microcontroller with no C reference exposed gaps in the developer

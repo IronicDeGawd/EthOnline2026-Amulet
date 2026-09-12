@@ -1,0 +1,128 @@
+{
+  "$schema": "https://github.com/LedgerHQ/clear-signing-erc7730-registry/raw/master/specs/erc7730-v1.schema.json",
+  "context": {
+    "$id": "PositionSim",
+    "contract": {
+      "deployments": [
+        {
+          "chainId": 11155111,
+          "address": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c"
+        },
+        {
+          "chainId": 11155111,
+          "address": "0xaab73d09E659A0F1898e19fBdD294371044DD524"
+        }
+      ],
+      "abi": [
+        {
+          "type": "function",
+          "name": "supply",
+          "inputs": [],
+          "outputs": [],
+          "stateMutability": "payable"
+        },
+        {
+          "type": "function",
+          "name": "repay",
+          "inputs": [],
+          "outputs": [],
+          "stateMutability": "payable"
+        },
+        {
+          "type": "function",
+          "name": "withdraw",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        },
+        {
+          "type": "function",
+          "name": "borrow",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "owner": "Amulet",
+    "info": {
+      "legalName": "Amulet (ETHOnline 2026)",
+      "url": "https://amulet-ethonline.vercel.app"
+    }
+  },
+  "display": {
+    "formats": {
+      "supply()": {
+        "intent": "Supply ETH as collateral",
+        "fields": [
+          {
+            "label": "Amount",
+            "format": "amount",
+            "path": "@.value"
+          }
+        ],
+        "required": [
+          "@.value"
+        ],
+        "excluded": []
+      },
+      "repay()": {
+        "intent": "Repay debt with ETH",
+        "fields": [
+          {
+            "label": "Amount",
+            "format": "amount",
+            "path": "@.value"
+          }
+        ],
+        "required": [
+          "@.value"
+        ],
+        "excluded": []
+      },
+      "withdraw(uint256)": {
+        "intent": "Withdraw collateral",
+        "fields": [
+          {
+            "label": "Amount",
+            "format": "amount",
+            "path": "#.amount"
+          }
+        ],
+        "required": [
+          "#.amount"
+        ],
+        "excluded": []
+      },
+      "borrow(uint256)": {
+        "intent": "Borrow sUSDC",
+        "fields": [
+          {
+            "label": "Amount",
+            "format": "tokenAmount",
+            "params": {
+              "token": "0xA13262C39A790dFb2B54e1FE4137C01CFB5e5Ea8"
+            },
+            "path": "#.amount"
+          }
+        ],
+        "required": [
+          "#.amount"
+        ],
+        "excluded": []
+      }
+    }
+  }
+}
