@@ -79,7 +79,7 @@
 .tile .chip { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 12px; color: var(--ink-2); border: 1px solid var(--rule); padding: 1px 7px; }
 .tile .chip.track { color: var(--gold); border-color: var(--gold); }
 .tile p { margin: 0; font-size: 16px; color: var(--ink-2); }
-.tile a { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; text-decoration: underline; text-decoration-color: var(--rule); }
+.tile a { display: block; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 13px; text-decoration: underline; text-decoration-color: var(--rule); }
 .tile a:hover { color: var(--gold); }
 
 footer.site { padding: 28px 40px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; gap: 10px 32px;

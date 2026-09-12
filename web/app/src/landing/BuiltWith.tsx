@@ -2,13 +2,21 @@
 const REPO = 'https://github.com/IronicDeGawd/EthOnline2026-Amulet'
 const SCAN = 'https://sepolia.etherscan.io'
 
-const TILES = [
+type Link = { href: string; label: string }
+type Tile = { name: string; kind: string; text: string; href: string; label: string; more?: Link[] }
+
+const TILES: Tile[] = [
   { name: 'Ledger', kind: 'track',
     text: "Signs every transaction. The pendant speaks the Nano X's Bluetooth transport itself, ported from Ledger's tooling to the ESP32, and sends EIP-712 typed data so the device clear-signs the same words the wrist saw.",
     href: `${REPO}/tree/main/firmware/main/ledger`, label: 'firmware/main/ledger' },
   { name: 'The Graph', kind: 'track',
-    text: 'Remembers every decision. Our own subgraph indexes AmuletLog; the dashboard reads it, and so does each agent before it proposes, learning from its own refusals.',
-    href: 'https://api.studio.thegraph.com/query/1758963/amulet-decisions/v0.1.0', label: 'amulet-decisions subgraph' },
+    text: 'Remembers every decision. Our own subgraph indexes AmuletLog; the dashboard reads it, and so does each agent before it proposes, learning from its own refusals. The market data the agent reasons over comes from the Aave, Compound and Spark subgraphs.',
+    href: `${REPO}/tree/main/subgraph`, label: 'subgraph/ · the mapping and schema',
+    more: [
+      { href: `${REPO}/blob/main/brain/src/data/graph/history.ts`, label: 'brain/src/data/graph/history.ts · the agent reads its own past' },
+      { href: `${REPO}/blob/main/brain/src/data/graph/lending.ts`, label: 'brain/src/data/graph/lending.ts · Aave, Compound, Spark' },
+      { href: `${REPO}/blob/main/web/app/src/proof/useSubgraph.ts`, label: 'web/app/src/proof/useSubgraph.ts · the dashboard' },
+    ] },
   { name: 'ENS', kind: 'track',
     text: 'Names the agents and holds the rules. repay, yield and swap each live under amuletguard.eth with a cap and an allow-list only a Ledger signature can edit.',
     href: 'https://sepolia.app.ens.domains/guardian.amuletguard.eth', label: 'guardian.amuletguard.eth' },
@@ -38,6 +46,9 @@ export default function BuiltWith() {
               </div>
               <p>{t.text}</p>
               <a href={t.href} target="_blank" rel="noreferrer">{t.label} &#8599;</a>
+              {t.more?.map((m) => (
+                <a key={m.href} href={m.href} target="_blank" rel="noreferrer">{m.label} &#8599;</a>
+              ))}
             </div>
           ))}
         </div>
