@@ -32,12 +32,24 @@ export function makeRecorder(rpcUrl: string, pk: Hex, logAddress: `0x${string}`)
   const wallet = createWalletClient({ account, chain: sepolia, transport: http(rpcUrl, { timeout: 20_000 }) });
   return {
     address: account.address,
-    record: (e) =>
-      wallet.writeContract({
-        address: logAddress,
-        abi: AMULET_LOG_ABI,
-        functionName: "record",
-        args: [e.proposalId, e.agent, e.target, e.value, e.selector, e.tier, OUTCOME[e.outcome]],
-      }),
+    // The same key relays the signed intent and then writes the log, one straight after the
+    // other. Some providers reject the second while the first is still pending, and a
+    // decision that is not written is a decision the dashboard cannot show. So: one retry,
+    // after a pause long enough for the first to be seen.
+    record: async (e) => {
+      const send = () =>
+        wallet.writeContract({
+          address: logAddress,
+          abi: AMULET_LOG_ABI,
+          functionName: "record",
+          args: [e.proposalId, e.agent, e.target, e.value, e.selector, e.tier, OUTCOME[e.outcome]],
+        });
+      try {
+        return await send();
+      } catch {
+        await new Promise((r) => setTimeout(r, 4_000));
+        return await send();
+      }
+    },
   };
 }
