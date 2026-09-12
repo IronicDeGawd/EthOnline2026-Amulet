@@ -5,7 +5,7 @@ const SCAN = 'https://sepolia.etherscan.io'
 const TILES = [
   { name: 'Ledger', kind: 'track',
     text: "Signs every transaction. The pendant speaks the Nano X's Bluetooth transport itself, ported from Ledger's tooling to the ESP32, and sends EIP-712 typed data so the device clear-signs the same words the wrist saw.",
-    href: `${REPO}/blob/main/firmware/main/ledger/ledger_ble.c`, label: 'firmware/main/ledger' },
+    href: `${REPO}/tree/main/firmware/main/ledger`, label: 'firmware/main/ledger' },
   { name: 'The Graph', kind: 'track',
     text: 'Remembers every decision. Our own subgraph indexes AmuletLog; the dashboard reads it, and so does each agent before it proposes, learning from its own refusals.',
     href: 'https://api.studio.thegraph.com/query/1758963/amulet-decisions/v0.1.0', label: 'amulet-decisions subgraph' },
