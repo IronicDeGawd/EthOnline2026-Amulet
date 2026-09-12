@@ -6,7 +6,9 @@ const links = [...src.matchAll(/href: (`[^`]*`|'[^']*')/g)].map(m => m[1].slice(
 let bad = 0
 for (const url of links) {
   const r = await fetch(url, { method: 'GET', redirect: 'follow', headers: { 'user-agent': 'amulet-link-check' } })
-  const ok = r.status < 400
+  // A 404 is a dead link. A 403 is a site refusing a bot: Etherscan answers 200 to a browser
+  // and 403 to Vercel's build servers, and the page behind it is real either way.
+  const ok = r.status < 400 || r.status === 403
   console.log(`${ok ? 'ok ' : 'BAD'} ${r.status} ${url}`)
   if (!ok) bad++
 }
