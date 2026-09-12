@@ -612,11 +612,17 @@ ens.command("show").description("records as any wallet reads them, plus who may 
 });
 ens.command("set").description("edit one policy record (deployer standing in for the Ledger's role)")
   .argument("<key>").argument("<value>")
-  .action(async (key: string, value: string) => {
+  .option("--agent <label>", "write on an agent's own name instead of the policy name")
+  .action(async (key: string, value: string, o: { agent?: string }) => {
     const s = await loadSecrets();
     const d = loadEnsDeployment();
+    // One record on one name. Re-issuing the whole agent rewrites seven records in a
+    // multicall; with the deployer nearly empty that difference decides whether the second
+    // write lands at all.
+    const name = o.agent ? agentName(o.agent) : POLICY_NAME;
     const k = key.startsWith("amulet.") ? key : `amulet.${key}`;
-    await writeRecords(deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log)), d.resolver, { [k]: value }, log);
+    log(`writing ${k} on ${name}`);
+    await writeRecords(deployerSigner(requireSecret(s, "SEPOLIA_RPC_URL"), deployerKey(s, log)), d.resolver, { [k]: value }, log, name);
   });
 ens.command("status").description("write amulet.status (or --key) with the brain hot key; anything but its two records reverts")
   .argument("<value>").option("--key <k>", "record", "amulet.status")

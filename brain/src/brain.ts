@@ -259,7 +259,10 @@ export class Brain {
     else if (c.action === "ADVISORY") to = this.ledger; // nothing to sign; tier 0 card only
     const tx = c.action === "ADVISORY"
       ? { to, value: 0n, data, nonce: 0, gas: 21_000, maxFeePerGas: 0n, maxPriorityFeePerGas: 0n }
-      : await buildTx(d.sepolia, { to, value: c.valueWei, data, from: this.ledger });
+      : await buildTx(d.sepolia, { to, value: c.valueWei, data, from: this.guarded() });
+    // Estimate against whoever actually sends the value. With a relayer that is the account,
+    // not the Ledger; estimating from the Ledger made every proposal fail on an address that
+    // was never going to pay.
 
     // 5. Policy. The pendant checks the same things; this is the brain refusing itself.
     const expiresAt = Math.floor(Date.now() / 1000) + PROPOSAL_TTL_S;
