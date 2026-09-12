@@ -23,7 +23,10 @@ const TILES: Tile[] = [
     more: [
       { href: `${REPO}/blob/main/brain/src/ens/setup.ts`, label: 'brain/src/ens/setup.ts · names, resolver, roles' },
       { href: `${REPO}/blob/main/brain/src/ens/status.ts`, label: 'brain/src/ens/status.ts · the only records the agent may write' },
-      { href: 'https://sepolia.app.ens.domains/guardian.amuletguard.eth', label: 'guardian.amuletguard.eth · the name itself' },
+      { href: 'https://sepolia.app.ens.domains/guardian.amuletguard.eth', label: 'guardian.amuletguard.eth · the policy name' },
+      { href: 'https://sepolia.app.ens.domains/repay.amuletguard.eth', label: 'repay.amuletguard.eth · cap 0.05 ETH' },
+      { href: 'https://sepolia.app.ens.domains/yield.amuletguard.eth', label: 'yield.amuletguard.eth · cap 0.01 ETH' },
+      { href: 'https://sepolia.app.ens.domains/swap.amuletguard.eth', label: 'swap.amuletguard.eth · cap 0.02 ETH' },
     ] },
   { name: 'Chainlink', kind: 'tool',
     text: 'Prices the account. The ETH/USD feed on Sepolia is the number the portfolio screen and the swap arithmetic use.',
