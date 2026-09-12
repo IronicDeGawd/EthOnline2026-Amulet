@@ -21,7 +21,7 @@ static const char *TAG = "ui";
 #define C_BLUE   0x4f8ef7
 
 static ui_state_t s_state = UI_HOME;
-static bool s_confirm, s_reject, s_armed;
+static bool s_confirm, s_reject, s_armed, s_ack;
 static ui_status_t s_status;
 
 static lv_obj_t *s_scr[UI_PORTFOLIO + 1];
@@ -71,6 +71,9 @@ static uint8_t s_p_tier;                  // of the proposal on screen, to re-ar
 // LEDGER WAIT / RESULT / BLOCKED
 static lv_obj_t *s_w_line2;
 static lv_obj_t *s_r_bg, *s_r_title, *s_r_detail;
+// Refusal only: who asked, what they asked for, and the rule that stopped it.
+static lv_obj_t *s_r_who, *s_r_pill, *s_r_why, *s_r_hint;
+static lv_obj_t *s_r_sheet, *s_r_s_who, *s_r_s_what, *s_r_s_why;
 static lv_obj_t *s_b_line1, *s_b_line2, *s_b_d1, *s_b_d2;
 // IDLE: the reactor. Rings are arcs on the core-glow bitmap; each carries its base angle in
 // user_data and one animation per ring group sweeps the rotation.
@@ -154,7 +157,7 @@ typedef struct {
     void (*on_tap)(const lv_point_t *at);   // a short press with no drag; NULL = ignored
 } hold_t;
 #define TAP_MS 350             // released within this, without a drag, is a tap
-static hold_t s_hold_swap, s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts, s_hold_agent;
+static hold_t s_hold_swap, s_hold_prop, s_hold_pair, s_hold_ledger, s_hold_opts, s_hold_agent, s_hold_result;
 static uint32_t s_shown_at, s_press_at;
 static bool s_press_counts, s_hold_view;
 // Set the moment a hold completes. The arc and its "…ing" word then stay on screen until the
@@ -529,6 +532,18 @@ static void build_wait(void)
     s_w_d2 = text(s, &manrope_500_13, C_MUTED, 180, "recipient on your device.");
 }
 
+// A refusal is the one screen the wearer must actually read: it is the moment the pendant
+// did its job. So it waits for a tap instead of clearing itself.
+static void refuse_close(lv_event_t *e) { (void)e; show(s_r_sheet, false); s_shown_at = lv_tick_get(); s_press_counts = false; }
+
+// On the pill: open the detail. Anywhere else: the wearer has read it, let it go.
+static void result_tap(const lv_point_t *at)
+{
+    if (lv_obj_has_flag(s_r_pill, LV_OBJ_FLAG_HIDDEN)) { s_ack = true; return; }
+    if (at->x >= 28 && at->x <= 212 && at->y >= 148 && at->y <= 194) { show(s_r_sheet, true); return; }
+    s_ack = true;
+}
+
 static void build_result(void)
 {
     lv_obj_t *s = s_scr[UI_RESULT] = screen(&bg_sent, &s_r_bg);
@@ -539,6 +554,59 @@ static void build_result(void)
     lv_obj_set_size(s_r_detail, 170, 40);
     lv_obj_set_pos(s_r_detail, 35, 158);
     lv_label_set_long_mode(s_r_detail, LV_LABEL_LONG_DOT);
+
+    // The refusal stack. A refusal has to answer two questions on its own: what was asked,
+    // and which rule said no. Kept inside the disc's chords: 176 px at y=96, 190 px at y=150.
+    s_r_who  = text(s, &manrope_500_13, C_MUTED, 144, "");   // sheet only now
+    s_r_pill = lv_obj_create(s);
+    lv_obj_remove_style_all(s_r_pill);
+    lv_obj_set_size(s_r_pill, 168, 26);
+    lv_obj_set_pos(s_r_pill, 36, 158);
+    lv_obj_set_style_radius(s_r_pill, 12, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_r_pill, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_r_pill, 33, LV_PART_MAIN);
+    s_r_why = lv_label_create(s_r_pill);
+    lv_obj_set_style_text_font(s_r_why, &manrope_500_13, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_r_why, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    lv_obj_set_size(s_r_why, 156, 18);
+    lv_obj_set_pos(s_r_why, 6, 4);
+    lv_label_set_long_mode(s_r_why, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_r_why, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_label_set_text(s_r_why, "");
+    s_r_hint = text(s, &manrope_500_11, C_MUTED, 196, "Tap for detail");
+    show(s_r_who, false); show(s_r_pill, false); show(s_r_hint, false);
+
+    // Behind the pill: what was asked, by whom, and the rule in full. Same sheet idea as the
+    // proposal's, because it is the same question — "tell me more about this one thing".
+    s_r_sheet = lv_obj_create(s);
+    lv_obj_remove_style_all(s_r_sheet);
+    lv_obj_set_size(s_r_sheet, 240, 240);
+    lv_obj_set_pos(s_r_sheet, 0, 0);
+    lv_obj_set_style_bg_color(s_r_sheet, lv_color_hex(0x0b1018), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_r_sheet, 242, LV_PART_MAIN);
+    lv_obj_add_flag(s_r_sheet, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(s_r_sheet, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN);
+    lv_obj_add_event_cb(s_r_sheet, refuse_close, LV_EVENT_CLICKED, NULL);
+    s_r_s_who = text(s_r_sheet, &manrope_500_11, C_MUTED, 46, "");
+    s_r_s_what = text(s_r_sheet, &manrope_700_15, C_TEXT, 66, "");
+    lv_obj_set_size(s_r_s_what, 180, 40);
+    lv_obj_set_pos(s_r_s_what, 30, 66);
+    lv_label_set_long_mode(s_r_s_what, LV_LABEL_LONG_DOT);
+    lv_obj_set_style_text_align(s_r_s_what, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    s_r_s_why = lv_label_create(s_r_sheet);
+    lv_obj_set_style_text_font(s_r_s_why, &manrope_500_13, LV_PART_MAIN);
+    lv_obj_set_style_text_color(s_r_s_why, lv_color_hex(C_TEXT), LV_PART_MAIN);
+    lv_obj_set_style_text_align(s_r_s_why, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_obj_set_style_text_line_space(s_r_s_why, 2, LV_PART_MAIN);
+    lv_label_set_long_mode(s_r_s_why, LV_LABEL_LONG_DOT);
+    lv_obj_set_size(s_r_s_why, 180, 52);
+    lv_obj_set_pos(s_r_s_why, 30, 112);
+    text(s_r_sheet, &manrope_500_11, C_MUTED, 176, "Nothing was sent to the Ledger");
+    text(s_r_sheet, &manrope_500_13, C_MUTED, 196, "Tap to go back");
+    show(s_r_sheet, false);
+
+    s_hold_result = (hold_t){ .arc = NULL, .view = NULL, .armed = never_armed, .on_tap = result_tap };
+    touch_layer(s, &s_hold_result);
 }
 
 static void build_blocked(void)
@@ -1183,6 +1251,13 @@ void ui_show_ledger_wait(const char *what)
 void ui_show_result(bool ok, const char *detail)
 {
     if (display_ready() && s_r_title && lvgl_port_lock(0)) {
+        show(s_r_who, false); show(s_r_pill, false); show(s_r_hint, false); show(s_r_sheet, false);
+        show(s_r_detail, true);
+        lv_obj_set_style_text_font(s_r_title, &manrope_700_26, LV_PART_MAIN);
+        lv_obj_set_pos(s_r_title, 0, 120);
+        lvgl_port_unlock();
+    }
+    if (display_ready() && s_r_title && lvgl_port_lock(0)) {
         lv_image_set_src(s_r_bg, ok ? &bg_sent : &bg_notsent);
         lv_label_set_text(s_r_title, ok ? "Sent" : "Not sent");
         lv_obj_set_style_text_font(s_r_detail, ok ? &plexmono_500_15 : &manrope_500_13, LV_PART_MAIN);
@@ -1290,13 +1365,29 @@ void ui_set_agent(const agent_t *a)
     snprintf(s_agent_label, sizeof s_agent_label, "%s", a ? a->label : "");
 }
 
-void ui_show_policy_reject(const char *reason)
+void ui_show_policy_reject(const char *reason, const char *agent, const char *human)
 {
+    s_ack = false;
+    s_shown_at = lv_tick_get();
+    s_press_counts = false;
     if (display_ready() && s_r_title && lvgl_port_lock(0)) {
         lv_image_set_src(s_r_bg, &bg_notsent);
         lv_label_set_text(s_r_title, "Refused");
-        lv_obj_set_style_text_font(s_r_detail, &manrope_500_13, LV_PART_MAIN);
-        lv_label_set_text(s_r_detail, reason && reason[0] ? reason : "Outside the policy");
+        lv_obj_set_style_text_font(s_r_title, &manrope_700_22, LV_PART_MAIN);
+        lv_obj_set_pos(s_r_title, 0, 118);
+        lv_obj_set_width(s_r_title, 240);
+        lv_obj_set_style_text_align(s_r_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+        // The success stack's one line is replaced by three: who asked, what for, and why not.
+        show(s_r_detail, false);
+        char who[40];
+        snprintf(who, sizeof who, "%s asked", agent && agent[0] ? agent : "an unnamed agent");
+        lv_label_set_text(s_r_who, who);
+        lv_label_set_text(s_r_why, reason && reason[0] ? reason : "Outside the policy");
+        lv_label_set_text(s_r_s_who, who);
+        lv_label_set_text(s_r_s_what, human && human[0] ? human : "");
+        lv_label_set_text(s_r_s_why, reason && reason[0] ? reason : "Outside the policy");
+        show(s_r_sheet, false);
+        show(s_r_who, false); show(s_r_pill, true); show(s_r_hint, true);
         lvgl_port_unlock();
     }
     go(UI_RESULT);
@@ -1342,6 +1433,7 @@ bool ui_is_resting(void) { return s_state == UI_HOME || s_state == UI_PHOTO || s
 
 bool ui_take_confirm(void) { bool c = s_confirm; s_confirm = false; return c; }
 bool ui_take_reject(void)  { bool r = s_reject;  s_reject  = false; return r; }
+bool ui_take_ack(void)     { bool a = s_ack;     s_ack     = false; return a; }
 
 void ui_attention(uint8_t times)
 {

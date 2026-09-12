@@ -409,7 +409,12 @@ program.command("demo").description("one key per scenario, with the pendant conn
     const rpc = requireSecret(s, "SEPOLIA_RPC_URL");
     const sepolia = sepoliaClient(rpc);
     if (!dep.amuletAccount) throw new Error("no amuletAccount in the deployments file");
-    const dk = deployerKey(s, log);
+    // The deployer key moves the sim's price and edits the policy on ENS. Four of the
+    // nineteen scenarios need it; the rest — every proposal, refusal, holdings and swap —
+    // do not. Demanding it at startup meant the deployed agent could not run the demo at
+    // all, so it is fetched when a scenario actually asks for it.
+    let dkCache: `0x${string}` | undefined;
+    const dk = (): `0x${string}` => (dkCache ??= deployerKey(s, log));
     const relayer = makeRelayer(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`);
     const pendant = new PendantLink();
     await pendant.listen(Number(o.port), "0.0.0.0", s.PENDANT_TOKEN);
@@ -426,7 +431,7 @@ program.command("demo").description("one key per scenario, with the pendant conn
         const q = await readEthUsd(sepolia);
         log(formatQuote(q));
         if (q.stale) { log("the feed has gone quiet; leaving the sims alone"); return; }
-        const signer = signerFromKey(rpc, dk);
+        const signer = signerFromKey(rpc, dk());
         for (const sim of [dep.simA, dep.simB]) {
           const hash = await syncSimPrice(signer.wallet, signer.account, sim, q.price);
           await signer.pub.waitForTransactionReceipt({ hash, timeout: RECEIPT_TIMEOUT_MS });
@@ -464,9 +469,9 @@ program.command("demo").description("one key per scenario, with the pendant conn
           undefined, q ? `Chainlink ${q.description}, updated ${Math.round(q.ageS / 60)} minutes ago` : undefined,
         );
       },
-      setPrice: (p) => setPrice(dep.simA, p, rpc, dk),
+      setPrice: (p) => setPrice(dep.simA, p, rpc, dk()),
       setRecord: async (name, key, value) => {
-        await writeRecords(deployerSigner(rpc, dk), loadEnsDeployment().resolver, { [key]: value }, log, name);
+        await writeRecords(deployerSigner(rpc, dk()), loadEnsDeployment().resolver, { [key]: value }, log, name);
         pendant.send({ type: "policy" });
       },
       brainWrite: (name, key, value) =>

@@ -35,6 +35,16 @@ ITEMS = [
     ("HOME", "date", "manrope_600_15", 150, None, 240, "CLIP", ["Wed 10", "Sat 31"]),
     ("HOME", "time", "manrope_800_36", 166, None, 240, "CLIP", ["23:59", "00:00"]),
     ("HOME", "battery %", "manrope_500_13", 206, 118, 40, "LEFT", ["100%"]),
+    # REFUSED: the pendant explaining itself. The red mark owns y=48..103, so every row
+    # here sits below it, and the bottom rows must be short — the disc is 133 px at y=214.
+    ("REFUSED", "title", "manrope_700_22", 118, None, 240, "CLIP", ["Refused"]),
+        ("REFUSED", "reason pill", "manrope_500_13", 162, 42, 156, "LEFT", ["Target is not in the policy", "Over the cap", "Unknown agent", "Proposal has no agent", "Wrong chain", "Expired"]),
+    ("REFUSED", "hint", "manrope_500_11", 196, None, 240, "CLIP", ["Tap for detail"]),
+    ("REFUSED SHEET", "who", "manrope_500_11", 46, None, 240, "CLIP", ["yield asked", "an unnamed agent asked"]),
+    ("REFUSED SHEET", "what", "manrope_700_15", 66, 30, 180, "DOT2", ["Add 0.02 ETH collateral on Sim-A", "Repay 0.0062 ETH on Sim-A"]),
+    ("REFUSED SHEET", "why", "manrope_500_13", 112, 30, 180, "DOT4", ["Target is not in the policy", "Over the cap: 0.02 ETH is more than 0.01 ETH"]),
+    ("REFUSED SHEET", "footer", "manrope_500_11", 176, None, 240, "CLIP", ["Nothing was sent to the Ledger"]),
+    ("REFUSED SHEET", "back", "manrope_500_13", 196, None, 240, "CLIP", ["Tap to go back"]),
     ("PROPOSAL", "verb", "manrope_600_19", 46, None, 240, "CLIP", ["Repay", "Add", "Send", "Swap"]),
     ("PROPOSAL", "amount", "manrope_800_52", 64, None, 240, "CLIP", ["0.0062", "0.0001", "0.05", "999999"]),  # brain caps the figure at 6 chars
     # unsplit headlines no longer reach the pendant: the brain refuses any that is not "Verb figure rest"

@@ -767,9 +767,17 @@ void app_main(void)
                 ESP_LOGW(TAG, "proposal %s from '%s' REFUSED: %s (%s)", s_pending.id, s_pending.agent, reason, s_pending.human);
                 send_decision(s_pending.id, "policy_reject", NULL);
                 ui_attention(2);
-                ui_show_policy_reject(reason);
+                ui_show_policy_reject(reason, s_pending.agent, s_pending.human);
                 s_have_pending = false;
-                vTaskDelay(pdMS_TO_TICKS(3000));
+                // The refusal is the moment the pendant earned its place, so it stays until
+                // the wearer has read it and tapped. Three seconds went by unseen. The
+                // timeout is only so a pendant left on a table finds its way home.
+                // It waits. A refusal the wearer did not see is the same as no refusal at all; the
+                // only reason there is a limit is a pendant left face-down on a bench.
+                for (int waited = 0; waited < 600000; waited += 50) {
+                    if (ui_take_ack()) break;
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
                 ui_show_home();
             } else {
                 // Who is asking comes first. The amount is not on screen until the wearer

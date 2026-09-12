@@ -42,7 +42,8 @@ void ui_show_proposal(const amulet_proposal_t *p);
 void ui_show_ledger_wait(const char *what);   // e.g. "Confirm on your Nano X"
 void ui_show_result(bool ok, const char *detail);  // tx hash, or the failure reason
 void ui_show_dismissed(bool advisory);
-void ui_show_policy_reject(const char *reason);   // the pendant refused it before the Ledger saw it
+// A refusal names the agent, what it wanted and the rule that stopped it.
+void ui_show_policy_reject(const char *reason, const char *agent, const char *human);   // the pendant refused it before the Ledger saw it
 // Whose proposal is coming: the agent's face replaces the icon at the top of the proposal
 // screen, so you see who is asking before you read what they want. NULL restores the default.
 void ui_set_agent(const agent_t *a);
@@ -86,6 +87,8 @@ ui_state_t ui_state(void);
 bool ui_take_confirm(void);
 // True once if you dismissed the proposal.
 bool ui_take_reject(void);
+// A refusal stays until the wearer taps it; true once per refusal.
+bool ui_take_ack(void);
 
 // Attention cue: replaces the descoped haptic. Pulses the backlight `times` times.
 void ui_attention(uint8_t times);
