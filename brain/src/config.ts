@@ -200,5 +200,5 @@ export const AAVE_V3_POOL_MAINNET = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
 export const TICK_MS = 12_000;
 export const PROPOSAL_TTL_S = 600;
 export const LLM_TIMEOUT_MS = 4000;
-export const NOVA_MODEL = "amazon.nova-lite-v1:0";
+export const NOVA_MODEL = "amazon.nova-pro-v1:0";
 export const PENDANT_PORT = 8788;

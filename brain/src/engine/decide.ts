@@ -61,6 +61,12 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
     ? `best venue ${best.protocol} at ${(best.supplyRateBps / 100).toFixed(2)}% vs your venue ${here.protocol} at ${(here.supplyRateBps / 100).toFixed(2)}%: ` +
       `a difference of ${spread} bps, which is ${spread > policy.yield_delta_bps ? "ABOVE" : "below"} the ${policy.yield_delta_bps} bps your policy asks for\n`
     : "";
+  // Same courtesy for the health factor: the number and the threshold are both in the brief,
+  // but a small model has read 1.056 as "above 1.25". Say which side of the line it is on.
+  const hfLine = Number.isFinite(p.healthFactor) && p.debtUnits > 0n
+    ? `your health factor ${hf} is ${p.healthFactor < policy.tier2_hf ? "BELOW" : "above"} the ${policy.tier2_hf.toFixed(2)} your policy acts on` +
+      `${p.healthFactor < policy.tier2_hf ? ": the policy says act now with REPAY_DEBT or ADD_COLLATERAL; a rate comparison does not excuse standing down" : ""}\n`
+    : "";
   return {
     system:
       `${mandate}\n` +
@@ -82,6 +88,7 @@ export function brief(p: Position, market: MarketContext, policy: Policy, mandat
       `  price: $${(Number(p.price) / 1e8).toFixed(2)} per ETH${priceNote ? ` (${priceNote})` : ""}\n` +
       `  liquidation threshold: ${p.ltBps / 100}%\n` +
       `  health factor: ${hf}  (liquidation at 1.00)\n` +
+      hfLine +
       (market.current
         ? `market ${market.current.protocol} ${market.current.symbol}: utilization ${(market.current.utilization * 100).toFixed(1)}%, ` +
           `supply ${(market.current.supplyRateBps / 100).toFixed(2)}%, borrow ${(market.current.borrowRateBps / 100).toFixed(2)}%\n`
