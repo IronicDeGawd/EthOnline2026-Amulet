@@ -7,8 +7,15 @@ type Tile = { name: string; kind: string; text: string; href: string; label: str
 
 const TILES: Tile[] = [
   { name: 'Ledger', kind: 'track',
-    text: "Signs every transaction. The pendant speaks the Nano X's Bluetooth transport itself, ported from Ledger's tooling to the ESP32, and sends EIP-712 typed data so the device clear-signs the same words the wrist saw.",
-    href: `${REPO}/tree/main/firmware/main/ledger`, label: 'firmware/main/ledger' },
+    text: "Signs every transaction. The pendant speaks the Nano X's Bluetooth transport itself, ported to the ESP32, and sends EIP-712 typed data so the device clear-signs the same words the wrist saw. The account on chain verifies that signature; the agent only carries it and pays the gas. Measuring the device turned up a documentation gap, now filed upstream.",
+    href: `${REPO}/blob/main/firmware/main/ledger/ble_transport.c`, label: 'firmware/main/ledger/ble_transport.c · the Nano X transport on an ESP32',
+    more: [
+      { href: `${REPO}/blob/main/firmware/main/ledger/eip712.c`, label: 'firmware/main/ledger/eip712.c · typed data the device shows in words' },
+      { href: `${REPO}/blob/main/firmware/main/ledger/apdu_eth.c`, label: 'firmware/main/ledger/apdu_eth.c · the Ethereum app commands' },
+      { href: `${REPO}/blob/main/contracts/src/AmuletAccount.sol`, label: 'contracts/src/AmuletAccount.sol · verifies the signature, holds no key' },
+      { href: `${REPO}/blob/main/brain/src/chain/account712.ts`, label: 'brain/src/chain/account712.ts · the agent relays, cannot alter a word' },
+      { href: 'https://github.com/LedgerHQ/app-ethereum/pull/1109', label: 'LedgerHQ/app-ethereum#1109 · upstream contribution' },
+    ] },
   { name: 'The Graph', kind: 'track',
     text: 'Remembers every decision. Our own subgraph indexes AmuletLog; the dashboard reads it, and so does each agent before it proposes, learning from its own refusals. The market data the agent reasons over comes from the Aave, Compound and Spark subgraphs.',
     href: `${REPO}/tree/main/subgraph`, label: 'subgraph/ · the mapping and schema',
