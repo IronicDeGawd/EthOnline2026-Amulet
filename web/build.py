@@ -370,12 +370,16 @@ hero = (
   '<title id="devtitle">The Amulet pendant, seen from the front</title>'
   '<desc id="devdesc">A 39 millimetre round display showing a proposal to repay 120 sUSDC on Aave, '
   'with the rule that triggered it and a prompt to hold to sign, drawn with a dimension line marking its diameter.</desc>'
+  # the dimension apparatus is a drawing convention, not part of the object: the film hides
+  # it for the close-up, the page keeps it
+  '<g class="dim">'
   '<g stroke="#4a545c" stroke-width="1" fill="none">'
   '<line x1="120" y1="66" x2="500" y2="66"/>'
   '<line x1="120" y1="58" x2="120" y2="74"/><line x1="500" y1="58" x2="500" y2="74"/>'
   '<line x1="120" y1="82" x2="120" y2="128"/><line x1="500" y1="82" x2="500" y2="128"/></g>'
   '<rect x="283" y="54" width="54" height="24" fill="#e9ecee"/>'
   '<text class="data" x="310" y="71" text-anchor="middle" font-size="13" fill="#4a545c">39 mm</text>'
+  '</g>'
   '<g stroke="#4a545c" stroke-width="1.4" fill="none">'
   '<path d="M296 128 C 296 108 300 96 310 92"/><path d="M324 128 C 324 108 320 96 310 92"/></g>'
   '<circle cx="310" cy="88" r="7" fill="none" stroke="#4a545c" stroke-width="1.4"/>'
