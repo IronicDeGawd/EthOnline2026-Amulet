@@ -1,0 +1,46 @@
+# Ledger — how Amulet uses it
+
+The Nano X is the only thing in this project that can sign. Everything else — the agent on
+its server, the pendant on your chest — carries words and signatures around it.
+
+## The claim, in one sentence
+
+A proposal reaches the Ledger only after a pendant with no key has checked it against rules on
+your ENS name, and the Ledger shows you the same sentence the pendant did before it signs.
+
+## What was built
+
+| piece | where | what it does |
+|---|---|---|
+| The Nano X's own Bluetooth transport, on an ESP32-S3 | [`firmware/main/ledger/ble_transport.c`](../firmware/main/ledger/ble_transport.c) | Frames on the write and notify characteristics, tags `0x00` GET VERSION, `0x01` INIT, `0x05` APDU, `0x08` GET MTU. Ported from the JS transport's source, in C, on NimBLE. |
+| The Ethereum app's commands | [`firmware/main/ledger/apdu_eth.c`](../firmware/main/ledger/apdu_eth.c) | GET PUBLIC KEY, SIGN ETH TRANSACTION, SIGN ETH EIP712. |
+| Typed data the device shows in words | [`firmware/main/ledger/eip712.c`](../firmware/main/ledger/eip712.c) | The pendant builds an EIP-712 `Action` and the Nano X clear-signs it, so the device displays *Repay 0.006 ETH on Sim-A* rather than calldata. Needs "Verbose EIP712" on in the Ethereum app. |
+| The account on chain | [`contracts/src/AmuletAccount.sol`](../contracts/src/AmuletAccount.sol) | Holds the position. `execute()` recovers the signer from the typed data, checks it is the Ledger's key, checks the nonce and deadline, then acts. It holds no key of its own. |
+| The relayer | [`brain/src/chain/account712.ts`](../brain/src/chain/account712.ts) | The agent carries the signature to the chain and pays the gas. It cannot alter a word of the intent without breaking the signature. |
+| The connection itself | [`firmware/main/app_main.c`](../firmware/main/app_main.c) | On demand: the pendant connects when a proposal arrives and drops the link sixty seconds after the last use, so a Ledger in a pocket is not held awake. |
+
+## What the wearer sees
+
+1. The pendant buzzes and shows the proposal: verb, amount, market, and the rule that fired.
+2. You hold your thumb on it. The arc fills.
+3. The Ledger wakes over Bluetooth and shows the same sentence on its own screen.
+4. You press. The signature goes back through the pendant to the agent, which relays it.
+5. Mined. The decision, approved or refused, is written to AmuletLog.
+
+Two screens have to agree. A phone can show you one thing and send another; the Ledger
+decodes the intent itself, on a screen wired to the chip that holds the key.
+
+## What was found along the way
+
+Porting the transport to a microcontroller with no C reference exposed gaps in the developer
+documentation. They are logged as they happened in
+[`LEDGER_FEEDBACK.md`](./LEDGER_FEEDBACK.md), and one became an upstream contribution:
+[LedgerHQ/app-ethereum#1109](https://github.com/LedgerHQ/app-ethereum/pull/1109) documents the
+`v` byte `SIGN ETH TRANSACTION` returns, found by measuring it here.
+
+## Status words worth knowing
+
+- `0x9000` — signed.
+- `0x6985` — the wearer pressed reject on the device.
+- `0x6a80` / `0x6501` — the Ethereum app needs "Verbose EIP712" turned on.
+- `0x0000` — the device never answered at all: Bluetooth dropped or the app closed. Not a refusal.
