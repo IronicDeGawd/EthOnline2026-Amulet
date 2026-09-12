@@ -35,7 +35,44 @@ Running log of friction and findings while porting the Ledger BLE transport and 
 - `SIGN TX` with an invalid leading byte returns **0x6501**; a continuation chunk with no transaction in progress returns **0x6980**. Neither code is in the app's `apdu.md` status-word table as far as we could find. A complete table would have saved a lookup.
 
 ## 4. wallet-cli / Key Ring
-_(to be filled when the brain's secrets move to the Key Ring)_
+
+The brain's secrets — Graph key, RPC URLs, the relayer's hot key — are sealed with
+`wallet-cli ring encrypt -k amulet-brain` on a Mac enrolled with the Nano X, and decrypted at
+boot with no device present. That part works and is the right shape. The friction is all around
+the edges of it.
+
+- **There is no way to enrol a machine you cannot plug a device into.** `ring init` requires
+  the Ledger physically attached to the machine becoming a member. The track brief asks for the
+  Key Ring on "VPS, CI runners, hosted agents" — none of which have a USB port you can reach.
+  Our agent runs on EC2 in another city, so it does not use the ring at all; it reads a plaintext
+  secrets file, which is exactly what the ring exists to replace. The alternative — copying the
+  Mac's member key out of the keychain onto the server — would make the ring's "hardware-rooted"
+  claim untrue, so we did not. **This is the single biggest gap for the agent use case.** What
+  would close it: an enrolment flow where the device on one machine authorises a member key
+  generated on another (a QR or a signed challenge over the trustchain), or a short-lived
+  decryption capability the enrolled machine can delegate to a remote host with a scope and an
+  expiry. The LKRP trustchain looks like it could carry either.
+- **`ring decrypt` writes its output and then never exits.** A network handle stays open after
+  the work is done. Our loader spawns it, waits for the output file to appear and stable, then
+  kills the process (`keyring.ts`). Every headless integration will need the same workaround
+  until it is fixed, and it is the kind of thing that turns a five-line integration into a
+  fifty-line one.
+- **Every command answers as JSON, including `--help`.** `wallet-cli ring init --help` returns
+  `{"ok":true,"data":{"type":"help","text":"..."}}`. Fine for machines, hostile for the first
+  ten minutes of a human reading it. `--output human` exists but is not the default for help.
+- **The password has no keychain integration on the CLI's side.** Headless runs need
+  `WALLET_PASS` in the environment; on a Mac we store it in the login keychain ourselves and
+  read it with `security find-generic-password` so it never lands in a shell history. The CLI
+  already writes to the keychain for the member key; it could read the password from there too.
+- **`ring keys` is a local cache and says so, but it also takes a network round-trip** before
+  answering, and hangs in the same way as `decrypt`. It should be instant.
+- **`--unsecure-no-password` is honestly named,** which we appreciated, and is the flag a CI
+  runner would end up using. That is a sign the CI story needs a designed path rather than a
+  flag with "unsecure" in it.
+
+What worked: encrypt-once-decrypt-anywhere-enrolled is the right model for an agent's secrets,
+the scoped key name (`-k amulet-brain`) makes one ring serve several agents, and the trustchain
+meant re-enrolling a reinstalled Mac needed only the device, not a backup of anything.
 
 ## 5. Developer portal navigation
 _(to be filled)_
