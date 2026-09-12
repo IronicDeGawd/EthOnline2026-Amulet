@@ -64,7 +64,7 @@ describe("options card", () => {
     const tight = { ...policy, allowed: policy.allowed.filter((a) => a.target !== dep.simB) };
     const { card, filtered } = assembleOptions(c, dep, tight, ev);
     expect(card.items.map((i) => i.protocol)).toEqual(["Aave"]);
-    expect(filtered.join(" ")).toMatch(/Spark .*Sim-B/);
+    expect(filtered.join(" ")).toMatch(/Spark .*Spark \(sim\)/);
   });
 
   it("caps the slice by the policy's value cap", () => {
@@ -81,7 +81,7 @@ describe("options card", () => {
     expect(pick.valueWei).toBe(MOVE_WEI);
     expect(tierOf(pick, policy)).toBe(2);
     const t = templateFor(pick);
-    expect(t.human).toBe("Supply 0.01 ETH on Sim-B");
+    expect(t.human).toBe("Supply 0.01 ETH on Spark (sim)");
     expect(t.rationale).toBe("Spark WETH 3.97% beats Aave 1.47% by 250 bps; mainnet data, sim execution.");
     expect(t.rationale.length).toBeLessThanOrEqual(96);
     const v = withinPolicy({ chainId: dep.chainId, to: pick.sim, value: pick.valueWei, data: dep.selectors.supply, gas: 80_000, expiresAt: 4e9 }, policy);

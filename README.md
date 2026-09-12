@@ -62,6 +62,11 @@ Amulet makes the human-in-the-loop a **physical object with one job**. Roughly 1
 | **The Graph** | Messari standardized lending subgraphs supply live market conditions; one query shape runs against three pinned deployments (Aave v3, Compound v3, Spark) to rank an asset's supply rate across protocols; a custom subgraph on Subgraph Studio indexes the agent's own actions — every approval and refusal, per agent — and the deployment ID and block the data came from are put in the model's own prompt. Every query pins a deployment ID and rejects stale blocks. Stale data puts the pendant in STALE mode and the agent stands down. | [`docs/THE_GRAPH.md`](docs/THE_GRAPH.md) · `brain/src/data/graph/`, `subgraph/` · findings in [`docs/THE_GRAPH_FEEDBACK.md`](docs/THE_GRAPH_FEEDBACK.md) |
 | **ENS** | Every agent lives at its own subname on ENSv2 Sepolia, with its own limits and its own face. Its policy (allowed contracts, max value, thresholds) is text records on a permissioned resolver. Enhanced Access Control gives the Ledger the policy-admin role and the brain a status-only role. The brain cannot raise its own limits. Revoking the subname is the kill switch. | [`docs/ENS.md`](docs/ENS.md) · `firmware/main/ens/`, `brain/src/ens/` · findings in [`docs/ENS_FEEDBACK.md`](docs/ENS_FEEDBACK.md) |
 
+> **On the names.** The two lending markets on Sepolia are contracts named `Sim-A` and `Sim-B` on
+> chain. Every screen, log and dashboard row calls them **Aave (sim)** and **Spark (sim)**, because
+> that is what each one stands in for: the same `supply` / `borrow` / `repay` / `withdraw` shape as
+> the real pool, with a price you can move by hand so a crash can happen on cue.
+
 ## The policy on ENS
 
 Amulet targets the **ENSv2 Sepolia beta** that the ENS docs pin (`ensdomains/contracts-v2` @ `97a5729`). The name is `guardian.amuletguard.eth`, issued as a real subname with a 30-day expiry under `amuletguard.eth`, with its own Permissioned Resolver and subregistry deployed through the Verifiable Factory. Addresses: `contracts/deployments/ens-11155111.json`.
@@ -88,7 +93,7 @@ real subname under the parent, and everything about it lives there:
 
 | | `repay.amuletguard.eth` | `yield.amuletguard.eth` |
 |---|---|---|
-| may touch | Sim-A | Sim-B only |
+| may touch | Aave (sim) | Spark (sim) only |
 | may call | `repay`, `supply` | `supply` only |
 | cap per action | 0.05 ETH | 0.01 ETH |
 | face | a guard robot, green | a sprout, gold |
@@ -140,7 +145,7 @@ transaction:
 
 ```
 Amulet · chain 11155111 · verifyingContract 0x23cf…8253
-summary   Supply 0.01 ETH on Sim-A
+summary   Supply 0.01 ETH on Aave (sim)
 action    Supply
 market    0x9A6c…467c
 amount    10000000000000000
@@ -166,7 +171,7 @@ pnpm amulet intent Supply 0.01          # one hand-made intent
 
 One Messari lending query runs against three pinned deployments (Aave v3, Compound v3, Spark), each through the same freshness gate, and the asset's supply rates are ranked. When another venue beats the one the position sits in by more than the ENS record `amulet.yield_delta_bps`, and holds that lead for 20 mainnet blocks with ten times the position in deposits, the pendant gets an **options card**: up to three venues, best first, with a footer that says the data is mainnet and the execution is a Sepolia sim.
 
-Nothing is built until a row is tapped. A tap sends the choice back, the brain turns that row into an ordinary tier-2 proposal ("Supply 0.01 ETH on Sim-B"), and it goes through the same policy check, the same hold, the same Ledger tap. A swipe dismisses the card and the idea stays quiet for an hour. A venue whose sim is not in `amulet.allowed` is never listed, so the Ledger decides which venues the agent may ever move into.
+Nothing is built until a row is tapped. A tap sends the choice back, the brain turns that row into an ordinary tier-2 proposal ("Supply 0.01 ETH on Spark (sim)"), and it goes through the same policy check, the same hold, the same Ledger tap. A swipe dismisses the card and the idea stays quiet for an hour. A venue whose sim is not in `amulet.allowed` is never listed, so the Ledger decides which venues the agent may ever move into.
 
 ```
 pnpm amulet yield [--asset WETH]        # the ranked table, with deployment ids and blocks

@@ -28,7 +28,7 @@ describe("buildAttack", () => {
     expect(b.tx.value).toBe(5_000_000_000_000_000_000n);
     expect(b.tx.gas).toBe(80_000);
     expect(b.tx.nonce).toBe(21);
-    expect(b.human).toMatch(/^Add 5 ETH collateral on Sim-A$/);
+    expect(b.human).toMatch(/^Add 5 ETH collateral on Aave \(sim\)$/);
     const v = withinPolicy({ chainId: dep.chainId, to: b.tx.to, value: b.tx.value, data: b.tx.data, gas: b.tx.gas, expiresAt: 4e9 }, policy);
     expect(v).toEqual({ ok: false, reason: expect.stringMatching(/exceeds cap/) });
   });

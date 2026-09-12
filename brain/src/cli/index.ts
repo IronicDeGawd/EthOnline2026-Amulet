@@ -15,7 +15,7 @@ import { ulid } from "ulid";
 import { namehash, normalize } from "viem/ens";
 import { sepolia as sepoliaChain } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { AGENTS, ENS, LEDGER_ADDRESS, PENDANT_PORT, RECEIPT_TIMEOUT_MS, REPO_ROOT, SEPOLIA_CHAIN_ID, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, DEFAULT_AGENT, agentName, loadDeployments, loadEnsDeployment, type AgentKey, type Deployments } from "../config.js";
+import { AGENTS, ENS, LEDGER_ADDRESS, PENDANT_PORT, RECEIPT_TIMEOUT_MS, REPO_ROOT, SEPOLIA_CHAIN_ID, POLICY_KEYS, POLICY_NAME, STATUS_KEYS, DEFAULT_AGENT, agentName, loadDeployments, loadEnsDeployment, type AgentKey, type Deployments, simLabel } from "../config.js";
 import { deployerSigner, ensSetup, issueAgent, revertReason, revokeAgent, signerFromKey, writeRecords } from "../ens/setup.js";
 import { FACES, faceAvatar, faceRecord } from "../agents/face.js";
 import { readPolicy, readRecords, type PolicyRead } from "../ens/resolver.js";
@@ -368,7 +368,7 @@ program.command("intent").description("push one typed-data intent to the pendant
     const relayer = makeRelayer(rpc, requireSecret(s, "BRAIN_LOG_PK") as `0x${string}`);
     const units = action === "Borrow" ? BigInt(amount) : parseEther(amount);
     const market = (o.sim === "simB" ? dep.simB : dep.simA) as `0x${string}`;
-    const simName = o.sim === "simB" ? "Sim-B" : "Sim-A";
+    const simName = simLabel(o.sim === "simB" ? "simB" : "simA");
     const unit = action === "Borrow" ? `${Number(units) / 1e6} sUSDC` : `${amount} ETH`;
     const intent = {
       summary: `${action} ${unit} on ${simName}`, action, market,
@@ -768,8 +768,8 @@ program.command("web-data").description("what the dashboard cannot read from the
     const verbs: Record<string, string> = {};
     for (const [word, sel] of Object.entries(dep.selectors ?? {})) verbs[String(sel).toLowerCase()] = word;
     const venues: Record<string, string> = {
-      [dep.simA.toLowerCase()]: "Sim-A",
-      [dep.simB.toLowerCase()]: "Sim-B",
+      [dep.simA.toLowerCase()]: simLabel("simA"),
+      [dep.simB.toLowerCase()]: simLabel("simB"),
       [dep.swapSim.toLowerCase()]: "Swap sim",
       [dep.sUSDC.toLowerCase()]: "sUSDC",
     };

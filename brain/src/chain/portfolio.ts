@@ -1,5 +1,6 @@
 // What the account actually holds, read fresh. Four or five short rows: the pendant shows
 // them as a list, and everything on it is a number read from chain, never a cached guess.
+import { simShort } from "../config.js";
 import { parseAbi, type PublicClient } from "viem";
 import { readPosition } from "./positionsim.js";
 import type { Deployments } from "../config.js";
@@ -30,14 +31,14 @@ export async function readPortfolio(client: PublicClient, dep: Deployments): Pro
   ];
   // A market with nothing in it is not worth a row on a 32 mm screen.
   for (const p of [a, b]) {
-    if (p.collateralWei > 0n) rows.push({ label: p.name, value: `${eth(p.collateralWei)} ETH`, sub: "supplied" });
+    if (p.collateralWei > 0n) rows.push({ label: simShort(p.name), value: `${eth(p.collateralWei)} ETH`, sub: "supplied" });
     if (p.debtUnits > 0n) {
       // "Owed", not "Sim-A debt": the label column is 76 px and the market belongs on the
       // second line anyway, next to the number that says whether it is comfortable.
       rows.push({
         label: "Owed",
         value: `$${(Number(p.debtUnits) / 1e6).toFixed(2)}`,
-        sub: Number.isFinite(p.healthFactor) ? `${p.name} health ${p.healthFactor.toFixed(2)}` : p.name,
+        sub: Number.isFinite(p.healthFactor) ? `${simShort(p.name)} health ${p.healthFactor.toFixed(2)}` : simShort(p.name),
       });
     }
   }

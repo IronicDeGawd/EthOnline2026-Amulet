@@ -1,7 +1,7 @@
 {
-  "readAt": "2026-09-11T09:30:22.924Z",
+  "readAt": "2026-09-12T21:22:14.988Z",
   "chainId": 11155111,
-  "block": 11681049,
+  "block": 11691503,
   "policyName": "guardian.amuletguard.eth",
   "status": "proposing",
   "lastAction": "0xc4a27b099a67d6ca1fc083e5fbdd18897e93b1ce9cf5370e64a8d04120f203ae@11673465",
@@ -61,8 +61,8 @@
     "0x2e1a7d4d": "withdraw"
   },
   "venues": {
-    "0x9a6c374822ada7aaa0590f1ce345a4fd949a467c": "Sim-A",
-    "0xaab73d09e659a0f1898e19fbdd294371044dd524": "Sim-B",
+    "0x9a6c374822ada7aaa0590f1ce345a4fd949a467c": "Aave (sim)",
+    "0xaab73d09e659a0f1898e19fbdd294371044dd524": "Spark (sim)",
     "0xff79706c842e4421948ae1e1050ee4594a4240e5": "Swap sim",
     "0xa13262c39a790dfb2b54e1fe4137c01cfb5e5ea8": "sUSDC"
   },

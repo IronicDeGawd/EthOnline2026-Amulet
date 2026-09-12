@@ -166,6 +166,19 @@ export function loadEnsDeployment(chainId = SEPOLIA_CHAIN_ID): EnsDeployment {
   return JSON.parse(readFileSync(p, "utf8")) as EnsDeployment;
 }
 
+// What the sims are called on every screen. The contracts are named "Sim-A" and "Sim-B" on
+// chain and that cannot change without a redeploy; but the wearer should read the venue each
+// one stands in for. One table, used wherever a sentence is built.
+export const SIM_DISPLAY: Record<string, string> = {
+  "Sim-A": "Aave (sim)",
+  "Sim-B": "Spark (sim)",
+};
+export const simDisplay = (onChainName: string): string => SIM_DISPLAY[onChainName] ?? onChainName;
+// The holdings screen has a 76 px label column: the venue alone, no "(sim)".
+export const SIM_SHORT: Record<string, string> = { "Aave (sim)": "Aave", "Spark (sim)": "Spark" };
+export const simShort = (displayName: string): string => SIM_SHORT[displayName] ?? displayName;
+export const simLabel = (which: "simA" | "simB"): string => (which === "simB" ? SIM_DISPLAY["Sim-B"] : SIM_DISPLAY["Sim-A"]);
+
 export const POLICY_REFRESH_TICKS = 10;
 
 // Typed-data signing: the Ledger reads an EIP-712 intent, so the device shows the sentence

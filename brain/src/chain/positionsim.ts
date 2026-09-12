@@ -1,5 +1,6 @@
 // Reads of the guarded position on PositionSim (Sepolia), plus the pure HF math the
 // rules use to size an action. Mirrors PositionSim.sol exactly.
+import { simDisplay } from "../config.js";
 import { parseAbi, type PublicClient } from "viem";
 
 export const POSITION_SIM_ABI = parseAbi([
@@ -37,7 +38,7 @@ export async function readPosition(client: PublicClient, sim: `0x${string}`, use
     client.readContract({ ...c, functionName: "liquidationThresholdBps" }),
   ]);
   return {
-    sim, name, user, collateralWei, debtUnits, price, ltBps: Number(ltBps),
+    sim, name: simDisplay(name), user, collateralWei, debtUnits, price, ltBps: Number(ltBps),
     healthFactor: healthFactorOf(collateralWei, price, Number(ltBps), debtUnits),
   };
 }

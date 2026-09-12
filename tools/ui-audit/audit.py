@@ -41,14 +41,14 @@ ITEMS = [
         ("REFUSED", "reason pill", "manrope_500_13", 162, 42, 156, "LEFT", ["Target is not in the policy", "Over the cap", "Unknown agent", "Proposal has no agent", "Wrong chain", "Expired"]),
     ("REFUSED", "hint", "manrope_500_11", 196, None, 240, "CLIP", ["Tap for detail"]),
     ("REFUSED SHEET", "who", "manrope_500_11", 46, None, 240, "CLIP", ["yield asked", "an unnamed agent asked"]),
-    ("REFUSED SHEET", "what", "manrope_700_15", 66, 30, 180, "DOT2", ["Add 0.02 ETH collateral on Sim-A", "Repay 0.0062 ETH on Sim-A"]),
+    ("REFUSED SHEET", "what", "manrope_700_15", 66, 30, 180, "DOT2", ["Add 0.02 ETH collateral on Aave (sim)", "Repay 0.0062 ETH on Aave (sim)"]),
     ("REFUSED SHEET", "why", "manrope_500_13", 112, 30, 180, "DOT4", ["Target is not in the policy", "Over the cap: 0.02 ETH is more than 0.01 ETH"]),
     ("REFUSED SHEET", "footer", "manrope_500_11", 176, None, 240, "CLIP", ["Nothing was sent to the Ledger"]),
     ("REFUSED SHEET", "back", "manrope_500_13", 196, None, 240, "CLIP", ["Tap to go back"]),
     ("PROPOSAL", "verb", "manrope_600_19", 46, None, 240, "CLIP", ["Repay", "Add", "Send", "Swap"]),
     ("PROPOSAL", "amount", "manrope_800_52", 64, None, 240, "CLIP", ["0.0062", "0.0001", "0.05", "999999"]),  # brain caps the figure at 6 chars
     # unsplit headlines no longer reach the pendant: the brain refuses any that is not "Verb figure rest"
-    ("PROPOSAL", "unit", "manrope_700_16", 122, None, 240, "CLIP", ["ETH on Sim-A", "ETH collateral on Sim-A", "sUSDC on Sim-B"]),
+    ("PROPOSAL", "unit", "manrope_700_16", 122, None, 240, "CLIP", ["ETH on Aave (sim)", "ETH collateral on Aave (sim)", "sUSDC on Spark (sim)"]),
     ("PROPOSAL", "pill text", "manrope_700_13", 150, None, 112, "SCROLL", ["Health factor 1.15 is under 1.25; this brings it back toward 1.40."]),
     ("PROPOSAL", "hold row label", "manrope_700_15", 198, 96, 144, "LEFT", ["Hold to sign"]),
     ("PROPOSAL", "lock1", "manrope_700_13", 201, None, 240, "CLIP", ["Ledger not awake", "Ledger not paired"]),
@@ -60,7 +60,7 @@ ITEMS = [
     ("ADVISORY", "a_unit", "manrope_700_16", 144, None, 240, "CLIP", ["on Aave WETH", "on Compound USDC"]),
     ("ADVISORY", "a_detail", "manrope_500_13", 168, 40, 160, "DOT2", ["Up 12.0 pts in 40 blocks; borrow rate 2.04%.", "Borrow demand surged 15.0 pts; rate now 2.04%.", "Nothing to sign"]),
     ("ADVISORY", "hint", "manrope_500_11", 208, None, 240, "CLIP", ["Swipe to dismiss"]),
-    ("DETAIL", "title", "manrope_700_15", 44, 30, 180, "DOT2", ["Repay 0.0062 ETH on Sim-A", "Add 0.05 ETH collateral on Sim-A"]),
+    ("DETAIL", "title", "manrope_700_15", 44, 30, 180, "DOT2", ["Repay 0.0062 ETH on Aave (sim)", "Add 0.05 ETH collateral on Aave (sim)"]),
     ("DETAIL", "why", "manrope_500_13", 88, 30, 180, "DOT4", ["Health factor 1.15 is under 1.25; this brings it back toward 1.40.", "X" * 0 + "Health factor 1.07 slipped under 1.40; topping up collateral now restores the 1.40 target safely."]),
     ("DETAIL", "evidence", "manrope_500_11", 160, None, 240, "CLIP", ["QmcXE5..dAd  block 25942525", "manual  block 11670624"]),
     ("DETAIL", "target", "manrope_500_11", 175, None, 240, "CLIP", ["to 0x9A6c..467c  tier 2", "repay  to 0x9A6c..467c  tier 2", "guardian  to 0x9A6c..467c  tier 2"]),
@@ -71,9 +71,9 @@ ITEMS = [
     ("OPTIONS", "row 3 name", "manrope_500_13", 156, 44, 88, "LEFT", ["Compound"]),
     # PORTFOLIO: list at x=20..220, rows 176 wide inside it; first row tops at y=62
     ("PORTFOLIO", "title", "manrope_700_15", 34, None, 240, "CLIP", ["Holdings"]),
-    ("PORTFOLIO", "row label", "manrope_700_15", 68, 44, 76, "LEFT", ["Owed", "sUSDC", "Sim-A", "ETH"]),
+    ("PORTFOLIO", "row label", "manrope_700_15", 68, 44, 76, "LEFT", ["Owed", "sUSDC", "Aave", "Spark", "ETH"]),
     ("PORTFOLIO", "row value", "manrope_700_15", 74, 140, 68, "LEFT", ["0.0134", "$10.00", "0.05 ETH"]),
-    ("PORTFOLIO", "row sub", "manrope_500_11", 86, 44, 96, "LEFT", ["in the account", "Sim-A health 1.33", "supplied"]),
+    ("PORTFOLIO", "row sub", "manrope_500_11", 86, 44, 96, "LEFT", ["in the account", "Aave health 1.33", "supplied"]),
     ("PORTFOLIO", "waiting", "manrope_500_13", 112, None, 240, "CLIP", ["asking the agent..."]),
     ("PORTFOLIO", "hint", "manrope_500_11", 202, None, 240, "CLIP", ["swipe sideways for home", "swipe up for home"]),
     # SWAP: two pills at y=74 and y=118 (36 px tall, x=32..208), Go pill at y=166 (x=54..186)

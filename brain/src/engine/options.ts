@@ -4,7 +4,7 @@
 // proposal; nothing is built before that.
 import { toHex } from "viem";
 import { ulid } from "ulid";
-import { PROPOSAL_TTL_S, type Deployments, type Policy } from "../config.js";
+import { PROPOSAL_TTL_S, type Deployments, type Policy, simLabel } from "../config.js";
 import type { Evidence } from "../data/graph/freshness.js";
 import type { YieldRow } from "../data/graph/yield.js";
 import { CURRENT_VENUE, type Candidate } from "./rules.js";
@@ -38,7 +38,7 @@ export interface OptionsCard {
 
 // Which Sepolia sim plays which mainnet venue.
 export function simFor(protocol: string, dep: Deployments): { sim: `0x${string}`; simName: string } {
-  return protocol === CURRENT_VENUE ? { sim: dep.simA, simName: "Sim-A" } : { sim: dep.simB, simName: "Sim-B" };
+  return protocol === CURRENT_VENUE ? { sim: dep.simA, simName: simLabel("simA") } : { sim: dep.simB, simName: simLabel("simB") };
 }
 
 function allowsSupply(policy: Policy, sim: `0x${string}`, dep: Deployments): boolean {

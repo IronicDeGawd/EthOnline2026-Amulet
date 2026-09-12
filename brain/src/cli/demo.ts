@@ -2,7 +2,7 @@
 // reconnect between scenarios and each one starts the moment you press a key.
 import { parseEther, toHex, type Hex, type PublicClient } from "viem";
 import { ulid } from "ulid";
-import { AGENTS, agentName, RECEIPT_TIMEOUT_MS, type AgentKey, type Deployments, type Policy } from "../config.js";
+import { AGENTS, agentName, RECEIPT_TIMEOUT_MS, type AgentKey, type Deployments, type Policy, simLabel } from "../config.js";
 import { PendantLink } from "../pendant/ws.js";
 import { accountNonce, makeRelayer, type Relayer } from "../chain/account712.js";
 import { proposalIdBytes32 } from "../engine/proposal.js";
@@ -40,7 +40,7 @@ function wrist(d: DemoDeps): void {
   if (!d.pendant.connected) throw new Error("the pendant is away — wait for \"pendant connected\"");
 }
 const sim = (d: Deployments, s: string) => (s === "simB" ? d.simB : d.simA);
-const simName = (s: string) => (s === "simB" ? "Sim-B" : "Sim-A");
+const simName = (s: string) => simLabel(s === "simB" ? "simB" : "simA");
 
 // Every scenario lands in the on-chain log, refusals included — that history is what the
 // subgraph indexes, so what you demo is what a judge can query afterwards.
@@ -117,7 +117,7 @@ async function yieldCard(d: DemoDeps): Promise<void> {
     { protocol: "Compound", market: "Compound WETH", symbol: "WETH", supplyRateBps: 135, depositUSD: 1.2e8, evidence: EVIDENCE },
   ];
   const c: Candidate = {
-    rule: "YIELD_OPP", action: "OPTIONS", sim: d.dep.simA, simName: "Sim-A", valueWei: 0n, options: rows,
+    rule: "YIELD_OPP", action: "OPTIONS", sim: d.dep.simA, simName: simLabel("simA"), valueWei: 0n, options: rows,
     facts: { asset: "WETH", best: "Spark", bestRate: "3.97", current: "Aave", curRate: "1.47", delta: 250 },
   };
   wrist(d);
@@ -128,7 +128,7 @@ async function yieldCard(d: DemoDeps): Promise<void> {
   if (pick.kind !== "pick") { d.log(`  the wrist said: ${pick.kind}`); return; }
   const chosen = pickCandidate(card, pick.idx, c)!;
   d.log(`  picked ${chosen.facts.best}; sending it as a request to sign`);
-  await goodRequest(d, "yield", "0.002", chosen.simName === "Sim-B" ? "simB" : "simA");
+  await goodRequest(d, "yield", "0.002", chosen.simName === simLabel("simB") ? "simB" : "simA");
 }
 
 // Nova decides for real, here, now. Whatever it answers is checked against that agent's
@@ -236,8 +236,8 @@ export const MENU = `
   y  let the yield scout decide          its own mandate, its own cap
   w  the wrist asks for a swap           live route, quoted on mainnet
   o  take the real ETH price             from Chainlink, into both sims
-  p  drop the Sim-A price                $1100: the health factor falls
-  r  put the Sim-A price back            $1600: healthy again
+  p  drop the Aave sim's price                $1100: the health factor falls
+  r  put the Aave sim's price back            $1600: healthy again
   s  status                              caps, balance, nonce, pendant
   m  show this menu again
   q  quit
@@ -279,11 +279,11 @@ export async function runScenario(k: string, d: DemoDeps): Promise<void> {
       if (!d.syncPrice) { d.log("no oracle wired into this run"); return; }
       return d.syncPrice();
     case "p":
-      d.log("dropping the Sim-A price to $1100");
+      d.log("dropping the Aave sim's price to $1100");
       await d.setPrice(110_000_000_000n);
       return;
     case "r":
-      d.log("putting the Sim-A price back to $1600");
+      d.log("putting the Aave sim's price back to $1600");
       await d.setPrice(160_000_000_000n);
       return;
     case "s": {

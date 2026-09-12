@@ -11,7 +11,7 @@
       "apyBps": 397,
       "human": "Spark",
       "sim": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
-      "simName": "Sim-B",
+      "simName": "Spark (sim)",
       "valueWei": "0x2386f26fc10000"
     },
     {
@@ -21,7 +21,7 @@
       "apyBps": 300,
       "human": "Compound",
       "sim": "0xaab73d09E659A0F1898e19fBdD294371044DD524",
-      "simName": "Sim-B",
+      "simName": "Spark (sim)",
       "valueWei": "0x2386f26fc10000"
     },
     {
@@ -31,7 +31,7 @@
       "apyBps": 147,
       "human": "Aave",
       "sim": "0x9A6c374822AdA7AAA0590f1CE345a4FD949A467c",
-      "simName": "Sim-A",
+      "simName": "Aave (sim)",
       "valueWei": "0x2386f26fc10000"
     }
   ],

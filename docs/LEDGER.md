@@ -14,7 +14,7 @@ your ENS name, and the Ledger shows you the same sentence the pendant did before
 |---|---|---|
 | The Nano X's own Bluetooth transport, on an ESP32-S3 | [`firmware/main/ledger/ble_transport.c`](../firmware/main/ledger/ble_transport.c) | Frames on the write and notify characteristics, tags `0x00` GET VERSION, `0x01` INIT, `0x05` APDU, `0x08` GET MTU. Ported from the JS transport's source, in C, on NimBLE. |
 | The Ethereum app's commands | [`firmware/main/ledger/apdu_eth.c`](../firmware/main/ledger/apdu_eth.c) | GET PUBLIC KEY, SIGN ETH TRANSACTION, SIGN ETH EIP712. |
-| Typed data the device shows in words | [`firmware/main/ledger/eip712.c`](../firmware/main/ledger/eip712.c) | The pendant builds an EIP-712 `Action` and the Nano X clear-signs it, so the device displays *Repay 0.006 ETH on Sim-A* rather than calldata. Needs "Verbose EIP712" on in the Ethereum app. |
+| Typed data the device shows in words | [`firmware/main/ledger/eip712.c`](../firmware/main/ledger/eip712.c) | The pendant builds an EIP-712 `Action` and the Nano X clear-signs it, so the device displays *Repay 0.006 ETH on Aave (sim)* rather than calldata. Needs "Verbose EIP712" on in the Ethereum app. |
 | The account on chain | [`contracts/src/AmuletAccount.sol`](../contracts/src/AmuletAccount.sol) | Holds the position. `execute()` recovers the signer from the typed data, checks it is the Ledger's key, checks the nonce and deadline, then acts. It holds no key of its own. |
 | The relayer | [`brain/src/chain/account712.ts`](../brain/src/chain/account712.ts) | The agent carries the signature to the chain and pays the gas. It cannot alter a word of the intent without breaking the signature. |
 | The connection itself | [`firmware/main/app_main.c`](../firmware/main/app_main.c) | On demand: the pendant connects when a proposal arrives and drops the link sixty seconds after the last use, so a Ledger in a pocket is not held awake. |
@@ -37,7 +37,7 @@ Two ways to make a Nano X show words instead of bytes, and Amulet uses both.
 **Typed data is the path the demo takes.** The pendant builds an EIP-712 `Action` — summary,
 action, market, amount, nonce, deadline — and the Ethereum app renders each field on its own
 screen with no descriptor at all, because the structure is in the message. This is why the
-Ledger shows *Repay 0.006 ETH on Sim-A* the moment the pendant does, and why the account
+Ledger shows *Repay 0.006 ETH on Aave (sim)* the moment the pendant does, and why the account
 contract verifies the signature over exactly those fields. The trade is that the account must
 exist: the Ledger signs an intent, not a transaction, and a relayer carries it.
 

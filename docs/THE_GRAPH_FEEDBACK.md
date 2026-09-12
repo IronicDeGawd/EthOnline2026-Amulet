@@ -32,7 +32,7 @@ because less went wrong; each item cost real time.
 - **matchstick's binary download is the slow part of every first run** and there is no message
   saying it is happening; the command just hangs. A progress line would stop people killing it.
 - **A subgraph can only index what the contract emitted.** Ours stores a selector, a target and
-  a value in wei, so the dashboard shows *Supply · 0.005 ETH · Sim-A* rebuilt from tables, not
+  a value in wei, so the dashboard shows *Supply · 0.005 ETH · Aave (sim)* rebuilt from tables, not
   the sentence the wearer actually read. Not The Graph's fault, but worth a line in any guide
   for agent builders: emit the words you will want to display, because you cannot add them later.
 

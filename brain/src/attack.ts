@@ -10,7 +10,7 @@ import { buildTx, supplyCalldata } from "./tx/builder.js";
 import type { Policy, Deployments } from "./config.js";
 import type { PendantLink } from "./pendant/ws.js";
 import type { Recorder } from "./chain/amuletlog.js";
-import { PROPOSAL_TTL_S } from "./config.js";
+import { PROPOSAL_TTL_S, simLabel } from "./config.js";
 
 export type AttackKind =
   | { kind: "value"; eth: string } // an allowed call, far over the value cap
@@ -36,7 +36,7 @@ export async function buildAttack(sepolia: PublicClient, dep: Deployments, ledge
     const tx = await buildTx(sepolia, { to: dep.simA, value, data: supplyCalldata(), from: ledger }, 80_000);
     // The words are deliberately ordinary. Nothing on the wrist reads them for honesty —
     // what stops this is the cap on the agent's own name.
-    return { tx, human: `Add ${a.eth} ETH collateral on Sim-A`, rationale: "Topping up collateral to keep the position comfortably above the threshold." };
+    return { tx, human: `Add ${a.eth} ETH collateral on ${simLabel("simA")}`, rationale: "Topping up collateral to keep the position comfortably above the threshold." };
   }
   const tx = await buildTx(sepolia, { to: a.to, value: parseEther("0.001"), data: "0x", from: ledger }, 21_000);
   return { tx, human: `Send 0.001 ETH to ${a.to.slice(0, 6)}…${a.to.slice(-4)}`, rationale: "Routine rebalance to the market's settlement address." };
