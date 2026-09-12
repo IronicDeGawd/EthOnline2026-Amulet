@@ -1,3 +1,5 @@
+import { goToObject } from '../opening/goToObject'
+
 export default function Header() {
   return (
     <header className="top">
@@ -11,7 +13,7 @@ export default function Header() {
           Amulet
         </a>
         <nav>
-          <a href="#object">The object</a>
+          <a href="#object" onClick={goToObject}>The object</a>
           <a href="#compare">Where it breaks</a>
           <a href="#/proof" data-secondary="">Proof</a>
           <a href="https://github.com/IronicDeGawd/EthOnline2026-Amulet">GitHub</a>
