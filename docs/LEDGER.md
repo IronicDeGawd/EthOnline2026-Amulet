@@ -55,6 +55,16 @@ The labels are within the device's limits — 30 characters for an intent, 20 fo
 because the linter says anything longer is truncated on screen, and a truncated label is the
 blind signing the format exists to prevent.
 
+## What Amulet deliberately does not do
+
+- **No x402 or agent-paid flows.** The brief lists agents paying for what they use. Amulet's
+  agent holds no funds and no key that can move them; a hot key holding money on an untrusted
+  host is the exact failure the project is built to remove. Payments would have to route
+  through the same pendant-then-Ledger path as everything else.
+- **No Key Ring on the deployed host.** The agent on EC2 reads a plaintext secrets file,
+  because the ring cannot enrol a machine a Ledger is never plugged into. Why, and what would
+  fix it, is in [`LEDGER_FEEDBACK.md`](./LEDGER_FEEDBACK.md#4-wallet-cli--key-ring).
+
 ## What was found along the way
 
 Porting the transport to a microcontroller with no C reference exposed gaps in the developer
