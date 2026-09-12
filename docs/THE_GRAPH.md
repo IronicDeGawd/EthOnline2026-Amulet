@@ -41,3 +41,5 @@ threshold on its ENS name.
 [`freshness.ts`](../brain/src/data/graph/freshness.ts) checks every answer's indexed block
 against the chain head. A stale subgraph is dropped, not trusted: a decision made on old data is
 worse than no decision. The deployment id and block are carried as evidence on every proposal.
+
+Friction found along the way is logged in [`THE_GRAPH_FEEDBACK.md`](./THE_GRAPH_FEEDBACK.md).

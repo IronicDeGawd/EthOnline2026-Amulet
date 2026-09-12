@@ -49,3 +49,5 @@ the policy is incomplete. A name with no policy is not "anything goes".
 | The agent's face, as a standard `avatar` record | [`brain/src/agents/face.ts`](../brain/src/agents/face.ts) — the same 16×16 the pendant draws, so a wallet shows the agent the way the wrist does |
 
 Every record is readable in the ENS app: [guardian.amuletguard.eth](https://sepolia.app.ens.domains/guardian.amuletguard.eth).
+
+Friction found along the way is logged in [`ENS_FEEDBACK.md`](./ENS_FEEDBACK.md).
