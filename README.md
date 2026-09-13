@@ -6,6 +6,8 @@
 
 Built for [ETHOnline 2026](https://ethglobal.com/events/ethonline2026) · From-Scratch track · Sponsors: **Ledger · The Graph · ENS**
 
+Showcase: https://ethglobal.com/showcase/amulet-tkj8k · Site: https://amulet-ethonline.vercel.app
+
 | | |
 |---|---|
 | Project page | https://amulet-ethonline.vercel.app |
