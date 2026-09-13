@@ -323,7 +323,7 @@ static void send_signature(const char *id, const uint8_t sig[65])
 // the pendant hands the signature back. Whoever relays it pays the gas and can change none of
 // it — the summary, the market, the amount, the nonce and the deadline are all inside the
 // signature. Returns true when the device signed.
-static bool sign_intent(const amulet_proposal_t *p, char *out, size_t out_cap)
+static bool sign_intent(const amulet_proposal_t *p, char *out, size_t out_cap, uint16_t *sw_out)
 {
     const amulet_intent_t *t = &p->intent;
     eip712_action_t a = {
@@ -336,6 +336,7 @@ static bool sign_intent(const amulet_proposal_t *p, char *out, size_t out_cap)
     memcpy(a.verifying_contract, t->account, 20);
     uint16_t sw = 0;
     int rc = eip712_sign_action(ETH_PATH, 5, &a, s_last_sig, &sw);
+    if (sw_out) *sw_out = sw;
     if (rc != 0) {
         // 0x6985 is the wearer saying no on the device; anything else is a real failure.
         if (sw == 0x6985) snprintf(out, out_cap, "Ledger refused");
@@ -767,14 +768,25 @@ void app_main(void)
                 ESP_LOGW(TAG, "proposal %s from '%s' REFUSED: %s (%s)", s_pending.id, s_pending.agent, reason, s_pending.human);
                 send_decision(s_pending.id, "policy_reject", NULL);
                 ui_attention(2);
-                ui_show_policy_reject(reason, s_pending.agent, s_pending.human);
                 s_have_pending = false;
+                // Who asked comes first here too: the face, then the tap opens the refusal.
+                // A refusal from a stranger has no face to show and goes straight to why.
+                bool swiped = false;
+                if (ag && ag->has_face) {
+                    ui_show_agent(ag);
+                    for (int waited = 0; waited < 600000; waited += 50) {
+                        if (ui_take_tap()) break;
+                        if (ui_take_reject()) { swiped = true; break; }
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                    }
+                }
+                if (!swiped) ui_show_policy_reject(reason, s_pending.agent, s_pending.human);
                 // The refusal is the moment the pendant earned its place, so it stays until
                 // the wearer has read it and tapped. Three seconds went by unseen. The
                 // timeout is only so a pendant left on a table finds its way home.
                 // It waits. A refusal the wearer did not see is the same as no refusal at all; the
                 // only reason there is a limit is a pendant left face-down on a bench.
-                for (int waited = 0; waited < 600000; waited += 50) {
+                for (int waited = 0; !swiped && waited < 600000; waited += 50) {
                     if (ui_take_ack()) break;
                     vTaskDelay(pdMS_TO_TICKS(50));
                 }
@@ -794,6 +806,9 @@ void app_main(void)
         // An advisory (tier 0) carries nothing to sign; the screen never arms the hold for it,
         // and this guard keeps a stray confirm from reaching the Ledger with the placeholder tx.
         if (prop_confirm && s_pending.tier == 0) prop_confirm = false;
+        // A Ledger that fell asleep since the face screen drops the link quietly; the flag
+        // still says "up". Check the radio, not the memory, before trusting it.
+        if (prop_confirm && st.ledger && !ledger_ble_is_connected()) { st.ledger = false; ui_set_status(&st); }
         if (prop_confirm && !st.ledger) {
             // Held while the Ledger was not answering: go and find it (pairing runs inside if
             // there is no bond yet), then the loop below puts the proposal back on screen.
@@ -810,8 +825,18 @@ void app_main(void)
             ui_show_ledger_wait("Confirm on your Nano X");
             char detail[64];
             bool intent = s_pending.intent.present;
-            bool ok = intent ? sign_intent(&s_pending, detail, sizeof detail)
+            uint16_t sw = 0;
+            bool ok = intent ? sign_intent(&s_pending, detail, sizeof detail, &sw)
                              : execute(&s_pending, detail, sizeof detail);
+            // No answer, locked, or wrong app: the Ledger was not ready, not the wearer
+            // saying no. Say what to do, keep the proposal, and let the next hold try again.
+            if (!ok && intent && (sw == 0x0000 || sw == 0x5515 || sw == 0x6511 || sw == 0x6e00 || sw == 0x6d02 || sw == 0x6e01)) {
+                st.ledger = false; ui_set_status(&st);
+                ui_show_blocked(sw == 0x0000 ? "wake your Ledger, hold again" : ledger_reason(sw));
+                vTaskDelay(pdMS_TO_TICKS(2500));
+                ui_show_proposal(&s_pending);
+                continue;
+            }
             ui_show_result(ok, detail);
             if (intent && ok) send_signature(s_pending.id, s_last_sig);
             else send_decision(s_pending.id, ok ? "approved" : "rejected", ok ? s_last_txh : NULL);
