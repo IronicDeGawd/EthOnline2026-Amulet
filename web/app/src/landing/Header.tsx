@@ -15,6 +15,8 @@ export default function Header() {
         <nav>
           <a href="#object" onClick={goToObject}>The object</a>
           <a href="#compare">Where it breaks</a>
+          <a href="#talks" data-tertiary="">How it talks</a>
+          <a href="#built" data-tertiary="">Built with</a>
           <a href="#/proof" data-secondary="">Proof</a>
           <a href="https://github.com/IronicDeGawd/EthOnline2026-Amulet">GitHub</a>
         </nav>

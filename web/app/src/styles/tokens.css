@@ -10,6 +10,8 @@
   --break:  #b5631e;
 }
 * { box-sizing: border-box; }
+/* Nav links glide to their section instead of jumping there. */
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--ground); color: var(--ink);
